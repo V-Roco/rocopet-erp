@@ -1,0 +1,275 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ADMIN: compra y vende, ve los datos financieros totales, gestiona compras
+// y puede estar a cargo de más de un lugar de trabajo. Es el único que crea
+// perfiles nuevos.
+// PARTNER (socio): mismos permisos que ADMIN, excepto crear perfiles.
+// EMPLOYEE (trabajador): ve/gestiona inventario, calendario y despachos —
+// no toca compras, ventas, proveedores, clientes ni perfiles.
+enum SystemRole {
+  ADMIN
+  PARTNER
+  EMPLOYEE
+}
+
+enum DeliveryStatus {
+  NOT_DELIVERED
+  PARTIAL
+  INCOMPLETE
+  COMPLETE
+}
+
+enum PaymentStatus {
+  NOT_PAID
+  PARTIAL
+  INCOMPLETE
+  COMPLETE
+}
+
+enum PaymentMethod {
+  CASH
+  CHECK
+  TRANSFER
+  DEPOSIT
+}
+
+// Tipo de documento tributario que termina emitiéndose para la venta.
+enum InvoiceType {
+  BOLETA
+  FACTURA
+}
+
+// Ciclo de vida del documento tributario, independiente de quién lo emita
+// (hoy un RPA que sube el PDF ya emitido; a futuro una API de facturación
+// electrónica que además puede responder con folio y rechazar el envío).
+enum InvoiceStatus {
+  PENDING
+  ISSUED
+  REJECTED
+}
+
+// Representa un lugar de trabajo físico (ej. una bodega). Un usuario puede
+// pertenecer a varios (ej. gestiona más de una bodega, en la misma región o
+// en otra) y un lugar de trabajo tiene varios usuarios asignados.
+model WorkGroup {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  region      String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  users     User[]
+  purchases Purchase[]
+}
+
+model Product {
+  id        String   @id @default(uuid())
+  name      String
+  quantity  Int      @default(0)
+  // Umbral bajo el cual el producto se marca como "stock bajo" en el frontend.
+  minStock  Int      @default(5)
+  imageUrl  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  purchaseItems PurchaseItem[]
+  saleItems     SaleItem[]
+}
+
+// Un vendedor/proveedor al que se le compran productos. Un mismo producto
+// puede haber sido comprado a distintos proveedores (a través de distintos
+// registros de Purchase); no hace falta una tabla intermedia para eso.
+model Supplier {
+  id        String   @id @default(uuid())
+  name      String
+  rut       String   @unique
+  phone     String?
+  email     String?
+  address   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  purchases Purchase[]
+}
+
+// Cabecera de una compra: uno o varios productos (PurchaseItem) a un mismo
+// proveedor. Los montos de cada línea se ingresan CON IVA (lo que se paga al
+// proveedor por unidad); el desglose neto/IVA se deriva con la tasa fija del
+// 19%, tanto por línea como en el total.
+model Purchase {
+  id          String     @id @default(uuid())
+  supplierId  String
+  supplier    Supplier   @relation(fields: [supplierId], references: [id])
+  // Bodega (lugar de trabajo) a la que entra el stock de esta compra. Opcional:
+  // no todas las compras necesitan quedar asociadas a una bodega específica.
+  workGroupId String?
+  workGroup   WorkGroup? @relation(fields: [workGroupId], references: [id])
+  subtotalNet Int
+  ivaAmount   Int
+  total       Int
+  purchasedAt DateTime   @default(now())
+  createdAt   DateTime   @default(now())
+
+  items PurchaseItem[]
+
+  @@index([supplierId, purchasedAt])
+  @@index([workGroupId])
+}
+
+model PurchaseItem {
+  id         String   @id @default(uuid())
+  purchaseId String
+  purchase   Purchase @relation(fields: [purchaseId], references: [id])
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id])
+  quantity   Int
+  // Cantidad de este lote que todavía no se ha consumido por ventas (FIFO).
+  remainingQty Int
+  // Precio unitario CON IVA (lo que se paga al proveedor por unidad).
+  unitCost   Int
+  lineTotal  Int
+
+  @@index([purchaseId])
+  @@index([productId, remainingQty])
+}
+
+// Un cliente al que se le vende. La dirección se geocodifica (Google Maps)
+// al crear/editar para guardar lat/lng además del texto ingresado.
+model Customer {
+  id            String   @id @default(uuid())
+  name          String
+  rut           String   @unique
+  // Giro/actividad económica: lo exige el SII en el encabezado de toda
+  // factura electrónica (no aplica a boleta). Opcional porque un cliente
+  // registrado solo para boletas no necesita completarlo.
+  giro          String?
+  email         String?
+  phone         String?
+  address       String?
+  latitude      Float?
+  longitude     Float?
+  businessHours String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sales Sale[]
+}
+
+// Cabecera de una venta: uno o varios productos (SaleItem). El cliente es
+// opcional — una venta de tienda (boleta a una persona cualquiera) no
+// necesita quedar asociada a un cliente con ficha propia; solo las ventas
+// que sí llevan seguimiento de cliente (bodega/mayorista) lo completan.
+// Los montos de cada línea se ingresan CON IVA (precio de venta al público);
+// el desglose neto/IVA se deriva con la tasa fija del 19%, tanto por línea
+// como en el total, así que no se duplica en columnas separadas.
+model Sale {
+  id          String    @id @default(uuid())
+  customerId  String?
+  customer    Customer? @relation(fields: [customerId], references: [id])
+  subtotalNet Int
+  ivaAmount   Int
+  total       Int
+  // Costo FIFO total de las unidades vendidas en todas las líneas.
+  costOfGoods Int
+  // PDF de la factura. Se sube aparte (después de crear la venta) porque hoy
+  // lo genera el RPA de facturación automatizada; a futuro lo puede generar
+  // una API de facturación electrónica sin cambiar estos campos.
+  invoiceUrl    String?
+  invoiceStatus InvoiceStatus @default(PENDING)
+  invoiceType   InvoiceType?
+  // Folio asignado por el SII (vía CAF) o por el proveedor de facturación.
+  invoiceFolio    String?
+  invoiceIssuedAt DateTime?
+  soldAt      DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  items    SaleItem[]
+  dispatch Dispatch?
+
+  @@index([customerId, soldAt])
+}
+
+model SaleItem {
+  id          String  @id @default(uuid())
+  saleId      String
+  sale        Sale    @relation(fields: [saleId], references: [id])
+  productId   String
+  product     Product @relation(fields: [productId], references: [id])
+  quantity    Int
+  // Precio unitario CON IVA (precio de venta al público).
+  unitPrice   Int
+  lineTotal   Int
+  costOfGoods Int
+
+  dispatchItem DispatchItem?
+
+  @@index([saleId])
+  @@index([productId])
+}
+
+// Se crea automáticamente junto con la venta (uno por venta), en estado
+// NOT_DELIVERED / NOT_PAID. Es lo que revisan los trabajadores para
+// despachar: productos, cantidades, lugar/dirección (a través de la venta →
+// cliente), y donde ajustan manualmente si algo llegó defectuoso y registran
+// entrega/pago.
+model Dispatch {
+  id             String         @id @default(uuid())
+  saleId         String         @unique
+  sale           Sale           @relation(fields: [saleId], references: [id])
+  deliveryStatus DeliveryStatus @default(NOT_DELIVERED)
+  paymentStatus  PaymentStatus  @default(NOT_PAID)
+  paymentMethod  PaymentMethod?
+  paidAmount     Int            @default(0)
+  // Solo aplica cuando paymentMethod es CHECK: fecha en que se puede cobrar
+  // el cheque. Por defecto 30 días desde que se registra el pago.
+  checkDueDate   DateTime?
+  // Día/hora agendada para la entrega. Null mientras no se ha agendado.
+  scheduledFor   DateTime?
+  notes          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  items DispatchItem[]
+
+  @@index([deliveryStatus])
+  @@index([paymentStatus])
+  @@index([scheduledFor])
+}
+
+model DispatchItem {
+  id         String   @id @default(uuid())
+  dispatchId String
+  dispatch   Dispatch @relation(fields: [dispatchId], references: [id])
+  saleItemId String   @unique
+  saleItem   SaleItem @relation(fields: [saleItemId], references: [id])
+  // Cantidad efectivamente entregada; el trabajador la reduce si algo llega
+  // defectuoso o falta (por defecto, igual a la cantidad vendida).
+  deliveredQuantity Int
+  notes             String?
+
+  @@index([dispatchId])
+}
+
+model User {
+  id                  String      @id @default(uuid())
+  email               String      @unique
+  rut                 String      @unique
+  pinHash             String
+  fullName            String?
+  // Lugares de trabajo a cargo de este usuario (puede ser más de uno).
+  workGroups          WorkGroup[]
+  systemRole          SystemRole  @default(EMPLOYEE)
+  isActive            Boolean     @default(true)
+  failedLoginAttempts Int         @default(0)
+  lockedUntil         DateTime?
+  lastLoginAt         DateTime?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+}

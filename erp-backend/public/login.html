@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Rocopet ERP - Login</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 360px; margin: 60px auto; }
+  h1 { font-size: 1.2rem; }
+  label { display: block; margin-top: 12px; font-size: 0.9rem; }
+  input { width: 100%; padding: 8px; box-sizing: border-box; margin-top: 4px; }
+  button { margin-top: 16px; width: 100%; padding: 10px; cursor: pointer; }
+  pre { background: #f4f4f4; padding: 12px; margin-top: 16px; white-space: pre-wrap; word-break: break-all; }
+</style>
+</head>
+<body>
+  <h1>Login - Rocopet ERP</h1>
+  <form id="loginForm">
+    <label>Email
+      <input type="email" name="email" value="admin@rocopet.cl" required />
+    </label>
+    <label>RUT
+      <input type="text" name="rut" value="12345678-5" required />
+    </label>
+    <label>PIN
+      <input type="text" name="pin" value="1234" maxlength="4" required />
+    </label>
+    <button type="submit">Entrar</button>
+  </form>
+  <pre id="result"></pre>
+
+  <script>
+    const form = document.getElementById('loginForm');
+    const result = document.getElementById('result');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(form));
+      result.textContent = 'Enviando...';
+      try {
+        const res = await fetch('/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        const body = await res.json();
+        result.textContent = `HTTP ${res.status}\n` + JSON.stringify(body, null, 2);
+      } catch (err) {
+        result.textContent = 'Error de red: ' + err.message;
+      }
+    });
+  </script>
+</body>
+</html>
