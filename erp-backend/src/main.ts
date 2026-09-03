@@ -22,6 +22,9 @@ async function bootstrap() {
   // Solo las imágenes de producto se sirven públicas. Las facturas (uploads/invoices)
   // NO se montan como estático: se descargan por GET /sales/:id/invoice, que exige login.
   app.useStaticAssets(join(process.cwd(), 'uploads', 'products'), { prefix: '/uploads/products/' });
-  await app.listen(process.env.PORT ?? 3000);
+  // Bindear explícitamente a 0.0.0.0: en contenedores (Railway, Docker),
+  // escuchar sin host explícito puede quedar solo en IPv6 y el proxy
+  // público no logra conectarse aunque el proceso esté sano.
+  await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
 }
 bootstrap();
