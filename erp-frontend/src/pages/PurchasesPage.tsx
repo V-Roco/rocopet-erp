@@ -41,7 +41,7 @@ export default function PurchasesPage() {
         api.get<WorkGroup[]>('/work-groups'),
       ]);
       setPurchases(p);
-      setProducts(prod);
+      setProducts([...prod].sort((a, b) => a.name.localeCompare(b.name)));
       setSuppliers(sup);
       setWorkGroups(wg);
     } catch (err) {

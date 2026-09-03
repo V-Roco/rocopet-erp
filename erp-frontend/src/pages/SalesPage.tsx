@@ -48,7 +48,7 @@ export default function SalesPage() {
         api.get<Customer[]>('/customers'),
       ]);
       setSales(s);
-      setProducts(prod);
+      setProducts([...prod].sort((a, b) => a.name.localeCompare(b.name)));
       setCustomers(cust);
       // Por defecto quedan todas seleccionadas (el rango de fecha ya las acota).
       setSelectedIds(new Set(s.map((sale) => sale.id)));
