@@ -21,6 +21,15 @@ export default function ProductsPage() {
   const [minStockDrafts, setMinStockDrafts] = useState<Record<string, string>>({});
   const [savingMinStock, setSavingMinStock] = useState<string | null>(null);
 
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editImage, setEditImage] = useState<File | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const [search, setSearch] = useState('');
+  const [sortBy, setSortBy] = useState<'name-asc' | 'name-desc' | 'qty-asc' | 'qty-desc'>('name-asc');
+  const [onlyLowStock, setOnlyLowStock] = useState(false);
+
   async function load() {
     setLoading(true);
     try {
@@ -76,6 +85,35 @@ export default function ProductsPage() {
     }
   }
 
+  function startEdit(p: Product) {
+    setEditingId(p.id);
+    setEditName(p.name);
+    setEditImage(null);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditImage(null);
+  }
+
+  async function handleSaveEdit(id: string) {
+    setSavingEdit(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append('name', editName);
+      if (editImage) form.append('image', await compressImage(editImage));
+      await api.patch(`/products/${id}`, form);
+      setEditingId(null);
+      setEditImage(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Error de conexión');
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
   async function handleDelete(id: string) {
     if (!confirm('¿Eliminar este producto?')) return;
     try {
@@ -87,6 +125,22 @@ export default function ProductsPage() {
   }
 
   const lowStockCount = products.filter((p) => p.quantity <= p.minStock).length;
+
+  const visibleProducts = products
+    .filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
+    .filter((p) => !onlyLowStock || p.quantity <= p.minStock)
+    .sort((a, b) => {
+      switch (sortBy) {
+        case 'name-asc':
+          return a.name.localeCompare(b.name);
+        case 'name-desc':
+          return b.name.localeCompare(a.name);
+        case 'qty-asc':
+          return a.quantity - b.quantity;
+        case 'qty-desc':
+          return b.quantity - a.quantity;
+      }
+    });
 
   return (
     <div>
@@ -123,6 +177,27 @@ export default function ProductsPage() {
         </form>
       )}
 
+      <div className="inline-form">
+        <input
+          placeholder="Buscar por nombre…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <label>
+          Ordenar por{' '}
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}>
+            <option value="name-asc">Nombre (A-Z)</option>
+            <option value="name-desc">Nombre (Z-A)</option>
+            <option value="qty-desc">Cantidad (mayor a menor)</option>
+            <option value="qty-asc">Cantidad (menor a mayor)</option>
+          </select>
+        </label>
+        <label>
+          <input type="checkbox" checked={onlyLowStock} onChange={(e) => setOnlyLowStock(e.target.checked)} />{' '}
+          Solo stock bajo
+        </label>
+      </div>
+
       {loading ? (
         <p>Cargando…</p>
       ) : (
@@ -138,8 +213,9 @@ export default function ProductsPage() {
             </tr>
           </thead>
           <tbody>
-            {products.map((p) => {
+            {visibleProducts.map((p) => {
               const lowStock = p.quantity <= p.minStock;
+              const isEditing = editingId === p.id;
               return (
                 <tr key={p.id} className={lowStock ? 'status-red' : ''}>
                   <td>
@@ -148,8 +224,21 @@ export default function ProductsPage() {
                     ) : (
                       <div className="thumb placeholder" />
                     )}
+                    {isEditing && (
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => setEditImage(e.target.files?.[0] ?? null)}
+                      />
+                    )}
                   </td>
-                  <td>{p.name}</td>
+                  <td>
+                    {isEditing ? (
+                      <input value={editName} onChange={(e) => setEditName(e.target.value)} />
+                    ) : (
+                      p.name
+                    )}
+                  </td>
                   <td>{p.quantity}</td>
                   <td>
                     {canManage ? (
@@ -178,17 +267,39 @@ export default function ProductsPage() {
                   <td>{lowStock && <span className="status-badge status-red">Stock bajo</span>}</td>
                   {canManage && (
                     <td>
-                      <button className="link-btn danger" onClick={() => handleDelete(p.id)}>
-                        Eliminar
-                      </button>
+                      {isEditing ? (
+                        <>
+                          <button
+                            className="link-btn"
+                            disabled={savingEdit}
+                            onClick={() => handleSaveEdit(p.id)}
+                          >
+                            {savingEdit ? 'Guardando…' : 'Guardar'}
+                          </button>{' '}
+                          <button className="link-btn" onClick={cancelEdit}>
+                            Cancelar
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button className="link-btn" onClick={() => startEdit(p)}>
+                            Editar
+                          </button>{' '}
+                          <button className="link-btn danger" onClick={() => handleDelete(p.id)}>
+                            Eliminar
+                          </button>
+                        </>
+                      )}
                     </td>
                   )}
                 </tr>
               );
             })}
-            {products.length === 0 && (
+            {visibleProducts.length === 0 && (
               <tr>
-                <td colSpan={canManage ? 6 : 5}>Sin productos todavía.</td>
+                <td colSpan={canManage ? 6 : 5}>
+                  {products.length === 0 ? 'Sin productos todavía.' : 'Ningún producto coincide con el filtro.'}
+                </td>
               </tr>
             )}
           </tbody>
