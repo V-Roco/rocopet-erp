@@ -48,7 +48,11 @@ const productImageInterceptor = FileInterceptor('image', {
     }
     callback(null, true);
   },
-  limits: { fileSize: 5 * 1024 * 1024 },
+  // El frontend ya redimensiona la imagen antes de subirla (las fotos de
+  // celular fácilmente superan 5MB en crudo); este límite es solo un techo
+  // de seguridad por si llega algo directo a la API sin pasar por esa
+  // compresión.
+  limits: { fileSize: 15 * 1024 * 1024 },
 });
 
 @Controller('products')

@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { api, API_URL, ApiError } from '../api/client';
 import type { Product } from '../api/types';
 import { useAuth } from '../context/AuthContext';
+import { compressImage } from '../lib/image';
 
 export default function ProductsPage() {
   const { user } = useAuth();
@@ -46,7 +47,7 @@ export default function ProductsPage() {
       form.append('name', name);
       form.append('quantity', quantity);
       form.append('minStock', minStock);
-      if (image) form.append('image', image);
+      if (image) form.append('image', await compressImage(image));
       await api.post('/products', form);
       setName('');
       setQuantity('0');
