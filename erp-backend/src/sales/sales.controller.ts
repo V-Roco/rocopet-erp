@@ -5,6 +5,7 @@ import {
   Get,
   NotFoundException,
   Param,
+  Patch,
   Post,
   Query,
   Res,
@@ -62,6 +63,11 @@ export class SalesController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.salesService.findOne(id);
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: CreateSaleDto) {
+    return this.salesService.update(id, dto);
   }
 
   @Post(':id/invoice')

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { api, ApiError } from '../api/client';
-import type { Customer, PaymentStatus, Product, Sale } from '../api/types';
+import { api, API_URL, ApiError } from '../api/client';
+import type { Customer, InvoiceType, PaymentStatus, Product, Sale } from '../api/types';
 import { PAYMENT_LABELS, INVOICE_STATUS_LABELS, statusClass, invoiceStatusClass } from '../lib/statusLabels';
 import { downloadCsv, toCsv } from '../lib/csv';
 
@@ -26,6 +26,18 @@ export default function SalesPage() {
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
+  const [editCustomerId, setEditCustomerId] = useState('');
+  const [editItems, setEditItems] = useState<DraftItem[]>([]);
+  const [savingSaleEdit, setSavingSaleEdit] = useState(false);
+
+  const [uploadingInvoiceId, setUploadingInvoiceId] = useState<string | null>(null);
+  const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
+  const [invoiceFolioDraft, setInvoiceFolioDraft] = useState('');
+  const [invoiceTypeDraft, setInvoiceTypeDraft] = useState<InvoiceType | ''>('');
+  const [savingInvoice, setSavingInvoice] = useState(false);
+  const [viewingInvoiceId, setViewingInvoiceId] = useState<string | null>(null);
 
   async function load(
     customerFilter = filterCustomerId,
@@ -115,6 +127,104 @@ export default function SalesPage() {
       setError(err instanceof ApiError ? err.message : 'Error de conexión');
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  function startEditSale(s: Sale) {
+    setEditingSaleId(s.id);
+    setEditCustomerId(s.customerId ?? '');
+    setEditItems(
+      s.items.map((i) => ({
+        productId: i.productId,
+        quantity: String(i.quantity),
+        unitPrice: String(i.unitPrice),
+      })),
+    );
+  }
+
+  function cancelEditSale() {
+    setEditingSaleId(null);
+  }
+
+  function updateEditItem(index: number, patch: Partial<DraftItem>) {
+    setEditItems((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+  }
+
+  function addEditItemRow() {
+    setEditItems((prev) => [...prev, { productId: '', quantity: '1', unitPrice: '0' }]);
+  }
+
+  function removeEditItemRow(index: number) {
+    setEditItems((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function handleSaveSaleEdit(id: string) {
+    setSavingSaleEdit(true);
+    setError(null);
+    try {
+      await api.patch(`/sales/${id}`, {
+        customerId: editCustomerId || undefined,
+        items: editItems.map((item) => ({
+          productId: item.productId,
+          quantity: Number(item.quantity),
+          unitPrice: Number(item.unitPrice),
+        })),
+      });
+      setEditingSaleId(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Error de conexión');
+    } finally {
+      setSavingSaleEdit(false);
+    }
+  }
+
+  function startUploadInvoice(saleId: string) {
+    setUploadingInvoiceId(saleId);
+    setInvoiceFile(null);
+    setInvoiceFolioDraft('');
+    setInvoiceTypeDraft('');
+  }
+
+  function cancelUploadInvoice() {
+    setUploadingInvoiceId(null);
+  }
+
+  async function handleUploadInvoice(saleId: string) {
+    if (!invoiceFile) return;
+    setSavingInvoice(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append('invoice', invoiceFile);
+      if (invoiceFolioDraft) form.append('folio', invoiceFolioDraft);
+      if (invoiceTypeDraft) form.append('type', invoiceTypeDraft);
+      await api.post(`/sales/${saleId}/invoice`, form);
+      setUploadingInvoiceId(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Error de conexión');
+    } finally {
+      setSavingInvoice(false);
+    }
+  }
+
+  async function handleViewInvoice(saleId: string) {
+    setViewingInvoiceId(saleId);
+    setError(null);
+    try {
+      const token = localStorage.getItem('access_token');
+      const res = await fetch(`${API_URL}/sales/${saleId}/invoice`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error();
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    } catch {
+      setError('No se pudo abrir la factura');
+    } finally {
+      setViewingInvoiceId(null);
     }
   }
 
@@ -291,48 +401,182 @@ export default function SalesPage() {
               <th>Total</th>
               <th>Pago</th>
               <th>Factura</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
-            {sales.map((s) => (
-              <tr key={s.id}>
-                <td>
-                  <input type="checkbox" checked={selectedIds.has(s.id)} onChange={() => toggleSelected(s.id)} />
-                </td>
-                <td>{new Date(s.soldAt).toLocaleDateString('es-CL')}</td>
-                <td>{new Date(s.createdAt).toLocaleString('es-CL')}</td>
-                <td>{s.customer?.name ?? 'Cliente anónimo'}</td>
-                <td>
-                  <ul className="item-list">
-                    {s.items.map((i) => (
-                      <li key={i.id}>
-                        {i.quantity}× {i.product.name} — ${i.unitPrice.toLocaleString('es-CL')} c/u = $
-                        {i.lineTotal.toLocaleString('es-CL')}
-                      </li>
-                    ))}
-                  </ul>
-                </td>
-                <td>${s.total.toLocaleString('es-CL')}</td>
-                <td>
-                  {s.dispatch ? (
-                    <span className={`status-badge ${statusClass(s.dispatch.paymentStatus)}`}>
-                      {PAYMENT_LABELS[s.dispatch.paymentStatus]}
+            {sales.map((s) => {
+              const isEditing = editingSaleId === s.id;
+              const canEditSale = !s.dispatch || s.dispatch.paymentStatus === 'NOT_PAID';
+              return (
+                <tr key={s.id}>
+                  <td>
+                    <input type="checkbox" checked={selectedIds.has(s.id)} onChange={() => toggleSelected(s.id)} />
+                  </td>
+                  <td>{new Date(s.soldAt).toLocaleDateString('es-CL')}</td>
+                  <td>{new Date(s.createdAt).toLocaleString('es-CL')}</td>
+                  <td>
+                    {isEditing ? (
+                      <select value={editCustomerId} onChange={(e) => setEditCustomerId(e.target.value)}>
+                        <option value="">Sin cliente (boleta anónima)</option>
+                        {customers.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      s.customer?.name ?? 'Cliente anónimo'
+                    )}
+                  </td>
+                  <td>
+                    {isEditing ? (
+                      <>
+                        {editItems.map((item, index) => (
+                          <div className="inline-form" key={index}>
+                            <select
+                              value={item.productId}
+                              onChange={(e) => updateEditItem(index, { productId: e.target.value })}
+                            >
+                              <option value="">Producto…</option>
+                              {products.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              type="number"
+                              min={1}
+                              value={item.quantity}
+                              onChange={(e) => updateEditItem(index, { quantity: e.target.value })}
+                            />
+                            <input
+                              type="number"
+                              min={0}
+                              value={item.unitPrice}
+                              onChange={(e) => updateEditItem(index, { unitPrice: e.target.value })}
+                            />
+                            {editItems.length > 1 && (
+                              <button
+                                type="button"
+                                className="link-btn danger"
+                                onClick={() => removeEditItemRow(index)}
+                              >
+                                Quitar
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        <button type="button" className="link-btn" onClick={addEditItemRow}>
+                          + Agregar producto
+                        </button>
+                      </>
+                    ) : (
+                      <ul className="item-list">
+                        {s.items.map((i) => (
+                          <li key={i.id}>
+                            {i.quantity}× {i.product.name} — ${i.unitPrice.toLocaleString('es-CL')} c/u = $
+                            {i.lineTotal.toLocaleString('es-CL')}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </td>
+                  <td>${s.total.toLocaleString('es-CL')}</td>
+                  <td>
+                    {s.dispatch ? (
+                      <span className={`status-badge ${statusClass(s.dispatch.paymentStatus)}`}>
+                        {PAYMENT_LABELS[s.dispatch.paymentStatus]}
+                      </span>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
+                  <td>
+                    <span className={`status-badge ${invoiceStatusClass(s.invoiceStatus)}`}>
+                      {INVOICE_STATUS_LABELS[s.invoiceStatus]}
+                      {s.invoiceFolio ? ` #${s.invoiceFolio}` : ''}
                     </span>
-                  ) : (
-                    '—'
-                  )}
-                </td>
-                <td>
-                  <span className={`status-badge ${invoiceStatusClass(s.invoiceStatus)}`}>
-                    {INVOICE_STATUS_LABELS[s.invoiceStatus]}
-                    {s.invoiceFolio ? ` #${s.invoiceFolio}` : ''}
-                  </span>
-                </td>
-              </tr>
-            ))}
+                    <div>
+                      {s.invoiceUrl && (
+                        <button
+                          type="button"
+                          className="link-btn"
+                          disabled={viewingInvoiceId === s.id}
+                          onClick={() => handleViewInvoice(s.id)}
+                        >
+                          {viewingInvoiceId === s.id ? 'Abriendo…' : 'Ver factura'}
+                        </button>
+                      )}
+                      {!s.invoiceUrl &&
+                        (uploadingInvoiceId === s.id ? (
+                          <div className="payment-form">
+                            <input
+                              type="file"
+                              accept="application/pdf"
+                              onChange={(e) => setInvoiceFile(e.target.files?.[0] ?? null)}
+                            />
+                            <input
+                              placeholder="N° folio"
+                              value={invoiceFolioDraft}
+                              onChange={(e) => setInvoiceFolioDraft(e.target.value)}
+                            />
+                            <select
+                              value={invoiceTypeDraft}
+                              onChange={(e) => setInvoiceTypeDraft(e.target.value as InvoiceType | '')}
+                            >
+                              <option value="">Tipo…</option>
+                              <option value="BOLETA">Boleta</option>
+                              <option value="FACTURA">Factura</option>
+                            </select>
+                            <button
+                              type="button"
+                              disabled={!invoiceFile || savingInvoice}
+                              onClick={() => handleUploadInvoice(s.id)}
+                            >
+                              {savingInvoice ? 'Subiendo…' : 'Guardar'}
+                            </button>
+                            <button type="button" className="link-btn" onClick={cancelUploadInvoice}>
+                              Cancelar
+                            </button>
+                          </div>
+                        ) : (
+                          <button type="button" className="link-btn" onClick={() => startUploadInvoice(s.id)}>
+                            Subir factura
+                          </button>
+                        ))}
+                    </div>
+                  </td>
+                  <td>
+                    {isEditing ? (
+                      <>
+                        <button
+                          type="button"
+                          className="link-btn"
+                          disabled={savingSaleEdit || editItems.some((item) => !item.productId)}
+                          onClick={() => handleSaveSaleEdit(s.id)}
+                        >
+                          {savingSaleEdit ? 'Guardando…' : 'Guardar'}
+                        </button>{' '}
+                        <button type="button" className="link-btn" onClick={cancelEditSale}>
+                          Cancelar
+                        </button>
+                      </>
+                    ) : (
+                      canEditSale && (
+                        <button type="button" className="link-btn" onClick={() => startEditSale(s)}>
+                          Editar
+                        </button>
+                      )
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
             {sales.length === 0 && (
               <tr>
-                <td colSpan={8}>Sin ventas todavía.</td>
+                <td colSpan={9}>Sin ventas todavía.</td>
               </tr>
             )}
           </tbody>
