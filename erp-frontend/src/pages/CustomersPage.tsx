@@ -16,6 +16,18 @@ export default function CustomersPage() {
   const [businessHours, setBusinessHours] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: '',
+    rut: '',
+    giro: '',
+    phone: '',
+    email: '',
+    address: '',
+    businessHours: '',
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+
   async function load() {
     setLoading(true);
     try {
@@ -60,6 +72,51 @@ export default function CustomersPage() {
     }
   }
 
+  // RUT se guarda sin guión (ej. "187654327"); el formulario de edición lo
+  // necesita con guión, que es el formato que exige la validación del PATCH.
+  function formatRut(rut: string) {
+    return `${rut.slice(0, -1)}-${rut.slice(-1)}`;
+  }
+
+  function startEdit(c: Customer) {
+    setEditingId(c.id);
+    setEditForm({
+      name: c.name,
+      rut: formatRut(c.rut),
+      giro: c.giro ?? '',
+      phone: c.phone ?? '',
+      email: c.email ?? '',
+      address: c.address ?? '',
+      businessHours: c.businessHours ?? '',
+    });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+  }
+
+  async function handleSaveEdit(id: string) {
+    setSavingEdit(true);
+    setError(null);
+    try {
+      await api.patch(`/customers/${id}`, {
+        name: editForm.name,
+        rut: editForm.rut,
+        giro: editForm.giro || undefined,
+        phone: editForm.phone || undefined,
+        email: editForm.email || undefined,
+        address: editForm.address || undefined,
+        businessHours: editForm.businessHours || undefined,
+      });
+      setEditingId(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Error de conexión');
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
   return (
     <div>
       <h1>Clientes</h1>
@@ -100,24 +157,91 @@ export default function CustomersPage() {
               <th>Dirección</th>
               <th>Horario de atención</th>
               <th>Coordenadas</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
-            {customers.map((c) => (
-              <tr key={c.id}>
-                <td>{c.name}</td>
-                <td>{c.rut}</td>
-                <td>{c.giro ?? '—'}</td>
-                <td>{c.phone ?? '—'}</td>
-                <td>{c.email ?? '—'}</td>
-                <td>{c.address ?? '—'}</td>
-                <td>{c.businessHours ?? '—'}</td>
-                <td>{c.latitude && c.longitude ? `${c.latitude.toFixed(4)}, ${c.longitude.toFixed(4)}` : '—'}</td>
-              </tr>
-            ))}
+            {customers.map((c) => {
+              const isEditing = editingId === c.id;
+              return (
+                <tr key={c.id}>
+                  {isEditing ? (
+                    <>
+                      <td>
+                        <input
+                          value={editForm.name}
+                          onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          value={editForm.rut}
+                          onChange={(e) => setEditForm((f) => ({ ...f, rut: e.target.value }))}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          value={editForm.giro}
+                          onChange={(e) => setEditForm((f) => ({ ...f, giro: e.target.value }))}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          value={editForm.phone}
+                          onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          value={editForm.email}
+                          onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          value={editForm.address}
+                          onChange={(e) => setEditForm((f) => ({ ...f, address: e.target.value }))}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          value={editForm.businessHours}
+                          onChange={(e) => setEditForm((f) => ({ ...f, businessHours: e.target.value }))}
+                        />
+                      </td>
+                      <td>{c.latitude && c.longitude ? `${c.latitude.toFixed(4)}, ${c.longitude.toFixed(4)}` : '—'}</td>
+                      <td>
+                        <button className="link-btn" disabled={savingEdit} onClick={() => handleSaveEdit(c.id)}>
+                          {savingEdit ? 'Guardando…' : 'Guardar'}
+                        </button>{' '}
+                        <button className="link-btn" onClick={cancelEdit}>
+                          Cancelar
+                        </button>
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td>{c.name}</td>
+                      <td>{c.rut}</td>
+                      <td>{c.giro ?? '—'}</td>
+                      <td>{c.phone ?? '—'}</td>
+                      <td>{c.email ?? '—'}</td>
+                      <td>{c.address ?? '—'}</td>
+                      <td>{c.businessHours ?? '—'}</td>
+                      <td>{c.latitude && c.longitude ? `${c.latitude.toFixed(4)}, ${c.longitude.toFixed(4)}` : '—'}</td>
+                      <td>
+                        <button className="link-btn" onClick={() => startEdit(c)}>
+                          Editar
+                        </button>
+                      </td>
+                    </>
+                  )}
+                </tr>
+              );
+            })}
             {customers.length === 0 && (
               <tr>
-                <td colSpan={8}>Sin clientes todavía.</td>
+                <td colSpan={9}>Sin clientes todavía.</td>
               </tr>
             )}
           </tbody>
