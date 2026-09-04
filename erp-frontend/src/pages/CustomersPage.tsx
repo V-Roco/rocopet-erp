@@ -95,7 +95,10 @@ export default function CustomersPage() {
               <th>Nombre</th>
               <th>RUT</th>
               <th>Giro</th>
+              <th>Teléfono</th>
+              <th>Correo</th>
               <th>Dirección</th>
+              <th>Horario de atención</th>
               <th>Coordenadas</th>
             </tr>
           </thead>
@@ -105,13 +108,16 @@ export default function CustomersPage() {
                 <td>{c.name}</td>
                 <td>{c.rut}</td>
                 <td>{c.giro ?? '—'}</td>
+                <td>{c.phone ?? '—'}</td>
+                <td>{c.email ?? '—'}</td>
                 <td>{c.address ?? '—'}</td>
+                <td>{c.businessHours ?? '—'}</td>
                 <td>{c.latitude && c.longitude ? `${c.latitude.toFixed(4)}, ${c.longitude.toFixed(4)}` : '—'}</td>
               </tr>
             ))}
             {customers.length === 0 && (
               <tr>
-                <td colSpan={5}>Sin clientes todavía.</td>
+                <td colSpan={8}>Sin clientes todavía.</td>
               </tr>
             )}
           </tbody>
