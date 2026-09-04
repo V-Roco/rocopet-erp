@@ -13,7 +13,6 @@ export default function ProductsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [name, setName] = useState('');
-  const [quantity, setQuantity] = useState('0');
   const [minStock, setMinStock] = useState('5');
   const [image, setImage] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -54,12 +53,10 @@ export default function ProductsPage() {
     try {
       const form = new FormData();
       form.append('name', name);
-      form.append('quantity', quantity);
       form.append('minStock', minStock);
       if (image) form.append('image', await compressImage(image));
       await api.post('/products', form);
       setName('');
-      setQuantity('0');
       setMinStock('5');
       setImage(null);
       await load();
@@ -153,16 +150,8 @@ export default function ProductsPage() {
       )}
 
       {canManage && (
-        <form className="inline-form" onSubmit={handleCreate}>
+        <form className="inline-form wrap" onSubmit={handleCreate}>
           <input placeholder="Nombre" value={name} onChange={(e) => setName(e.target.value)} required />
-          <input
-            type="number"
-            min={0}
-            placeholder="Cantidad"
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
-            required
-          />
           <input
             type="number"
             min={0}
@@ -174,6 +163,9 @@ export default function ProductsPage() {
           <button type="submit" disabled={submitting}>
             {submitting ? 'Creando…' : '+ Nuevo producto'}
           </button>
+          <p className="muted" style={{ width: '100%', margin: 0 }}>
+            El producto se crea con 0 unidades — el stock entra al registrar una compra en "Compras".
+          </p>
         </form>
       )}
 

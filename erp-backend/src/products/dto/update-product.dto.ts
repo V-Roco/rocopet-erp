@@ -7,12 +7,9 @@ export class UpdateProductDto {
   @MinLength(1, { message: 'El nombre es obligatorio' })
   name?: string;
 
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt({ message: 'La cantidad debe ser un número entero' })
-  @Min(0, { message: 'La cantidad no puede ser negativa' })
-  quantity?: number;
-
+  // La cantidad no se edita a mano: solo cambia al registrar compras
+  // (suma) o ventas (resta), que son las que respaldan el stock con lotes
+  // FIFO reales.
   @IsOptional()
   @Type(() => Number)
   @IsInt({ message: 'El stock mínimo debe ser un número entero' })

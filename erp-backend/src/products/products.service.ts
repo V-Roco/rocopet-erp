@@ -15,7 +15,6 @@ export class ProductsService {
     return this.prisma.product.create({
       data: {
         name: dto.name,
-        quantity: dto.quantity,
         ...(dto.minStock !== undefined && { minStock: dto.minStock }),
         imageUrl,
       },
@@ -68,7 +67,6 @@ export class ProductsService {
       where: { id },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
-        ...(dto.quantity !== undefined && { quantity: dto.quantity }),
         ...(dto.minStock !== undefined && { minStock: dto.minStock }),
         ...(imageUrl !== undefined && { imageUrl }),
       },
