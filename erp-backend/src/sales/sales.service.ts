@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { InvoiceType, PaymentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { breakdownIva } from '../common/utils/iva.util';
+import { ADJUSTMENT_SUPPLIER_RUT } from '../common/constants';
 import { CreateSaleDto, SaleItemDto } from './dto/create-sale.dto';
 import { QuerySalesReportDto } from './dto/query-sales-report.dto';
 import { endOfDay, startOfDay } from '../common/utils/date-range.util';
@@ -11,10 +12,6 @@ const SALE_INCLUDE = {
   items: { include: { product: { select: { id: true, name: true, imageUrl: true } } } },
   dispatch: { select: { id: true, paymentStatus: true, deliveryStatus: true } },
 } as const;
-
-// RUT fijo (válido, sin dueño real) para el proveedor genérico bajo el que
-// quedan las devoluciones de stock cuando se edita una venta ya despachada.
-const ADJUSTMENT_SUPPLIER_RUT = '888888888';
 
 interface SaleItemRow {
   productId: string;

@@ -1,9 +1,15 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { breakdownIva } from '../common/utils/iva.util';
+import { ADJUSTMENT_SUPPLIER_RUT } from '../common/constants';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { QueryPurchasesReportDto } from './dto/query-purchases-report.dto';
 import { endOfDay, startOfDay } from '../common/utils/date-range.util';
+
+// Filtro para dejar fuera de gráficos/reportes las compras del proveedor
+// interno "Ajustes de inventario" (devoluciones de stock al editar una
+// venta) — no son compras reales y distorsionarían las cifras.
+const EXCLUDE_ADJUSTMENTS = { supplier: { rut: { not: ADJUSTMENT_SUPPLIER_RUT } } } as const;
 
 const PURCHASE_INCLUDE = {
   supplier: { select: { id: true, name: true, rut: true } },
@@ -101,6 +107,7 @@ export class PurchasesService {
 
   async getChart() {
     const purchases = await this.prisma.purchase.findMany({
+      where: EXCLUDE_ADJUSTMENTS,
       orderBy: { purchasedAt: 'asc' },
       include: { items: true },
     });
@@ -135,6 +142,7 @@ export class PurchasesService {
           purchase: {
             purchasedAt: { gte: fromDate, lte: toDate },
             ...(dto.supplierId && { supplierId: dto.supplierId }),
+            ...EXCLUDE_ADJUSTMENTS,
           },
         },
         include: {
@@ -162,6 +170,7 @@ export class PurchasesService {
       where: {
         purchasedAt: { gte: fromDate, lte: toDate },
         ...(dto.supplierId && { supplierId: dto.supplierId }),
+        ...EXCLUDE_ADJUSTMENTS,
       },
       orderBy: { purchasedAt: 'desc' },
       include: PURCHASE_INCLUDE,
