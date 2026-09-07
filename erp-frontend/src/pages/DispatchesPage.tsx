@@ -131,6 +131,9 @@ export default function DispatchesPage() {
     }
   }
 
+  const pendingDispatches = dispatches.filter((d) => d.deliveryStatus !== 'COMPLETE');
+  const completedDispatches = dispatches.filter((d) => d.deliveryStatus === 'COMPLETE');
+
   return (
     <div>
       <h1>Despachos</h1>
@@ -170,22 +173,35 @@ export default function DispatchesPage() {
       {loading ? (
         <p>Cargando…</p>
       ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Cliente</th>
-              <th>Dirección</th>
-              <th>Productos</th>
-              <th>Total</th>
-              <th>Entrega</th>
-              <th>Pago</th>
-            </tr>
-          </thead>
-          <tbody>
-            {dispatches.map((d) => {
-              const draft = drafts[d.id] ?? draftFrom(d);
-              return (
-                <tr key={d.id}>
+        <>
+          <h3>Pendientes</h3>
+          {renderTable(pendingDispatches, 'Sin despachos pendientes.')}
+
+          <h3>Entregados</h3>
+          {renderTable(completedDispatches, 'Sin despachos entregados todavía.')}
+        </>
+      )}
+    </div>
+  );
+
+  function renderTable(list: Dispatch[], emptyMessage: string) {
+    return (
+      <table>
+        <thead>
+          <tr>
+            <th>Cliente</th>
+            <th>Dirección</th>
+            <th>Productos</th>
+            <th>Total</th>
+            <th>Entrega</th>
+            <th>Pago</th>
+          </tr>
+        </thead>
+        <tbody>
+          {list.map((d) => {
+            const draft = drafts[d.id] ?? draftFrom(d);
+            return (
+              <tr key={d.id}>
                   <td>{d.sale.customer?.name ?? 'Cliente anónimo'}</td>
                   <td>{d.sale.customer?.address ?? '—'}</td>
                   <td>
@@ -296,14 +312,13 @@ export default function DispatchesPage() {
                 </tr>
               );
             })}
-            {dispatches.length === 0 && (
+            {list.length === 0 && (
               <tr>
-                <td colSpan={6}>Sin despachos todavía.</td>
+                <td colSpan={6}>{emptyMessage}</td>
               </tr>
             )}
           </tbody>
         </table>
-      )}
-    </div>
-  );
+    );
+  }
 }
