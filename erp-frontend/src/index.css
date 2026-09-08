@@ -8,6 +8,9 @@
   --text: #1f2937;
   --danger: #dc2626;
   font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+  /* Todo el resto del CSS usa rem, así que subir la base escala toda la
+     app de una: títulos, texto normal, tablas, botones, etc. */
+  font-size: 18px;
 }
 
 * {
