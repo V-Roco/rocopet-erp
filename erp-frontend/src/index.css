@@ -10,7 +10,7 @@
   font-family: system-ui, -apple-system, Segoe UI, sans-serif;
   /* Todo el resto del CSS usa rem, así que subir la base escala toda la
      app de una: títulos, texto normal, tablas, botones, etc. */
-  font-size: 18px;
+  font-size: 20px;
 }
 
 * {
@@ -137,7 +137,7 @@ body {
 .content {
   flex: 1;
   padding: 32px;
-  max-width: 1100px;
+  max-width: 1800px;
 }
 
 .content h1 {
