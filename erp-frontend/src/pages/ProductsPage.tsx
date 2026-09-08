@@ -193,7 +193,7 @@ export default function ProductsPage() {
       {loading ? (
         <p>Cargando…</p>
       ) : (
-        <table>
+        <table className="products-table">
           <thead>
             <tr>
               <th></th>

@@ -334,6 +334,19 @@ th {
   background: #e5e7eb;
 }
 
+/* Inventario: fotos e texto más grandes que el resto de las tablas, para
+   que se reconozca el producto de un vistazo. */
+.products-table .thumb {
+  width: 72px;
+  height: 72px;
+  border-radius: 8px;
+}
+
+.products-table th,
+.products-table td {
+  font-size: 1.1rem;
+}
+
 .error {
   color: var(--danger);
   font-size: 0.9rem;
