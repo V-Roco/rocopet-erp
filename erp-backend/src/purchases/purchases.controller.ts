@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { SystemRole } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RequireRole, SystemRoleGuard } from '../auth/guards/system-role.guard';
@@ -15,6 +15,11 @@ export class PurchasesController {
   @Post()
   create(@Body() dto: CreatePurchaseDto) {
     return this.purchasesService.create(dto);
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: CreatePurchaseDto) {
+    return this.purchasesService.update(id, dto);
   }
 
   @Get()

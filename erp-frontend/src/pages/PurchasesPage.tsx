@@ -8,6 +8,25 @@ interface DraftItem {
   unitCost: string;
 }
 
+// El costo se guarda y se manda al backend siempre CON IVA (así lo espera
+// la API), pero como algunos proveedores cotizan neto y otros con IVA, se
+// muestran los dos campos enlazados: escribir en uno recalcula el otro.
+function grossFromNet(net: string) {
+  const n = Number(net);
+  if (!n) return '0';
+  return String(Math.round(n * 1.19));
+}
+
+function netFromGross(gross: string) {
+  const g = Number(gross);
+  if (!g) return '0';
+  return String(Math.round(g / 1.19));
+}
+
+function emptyItem(): DraftItem {
+  return { productId: '', quantity: '1', unitCost: '0' };
+}
+
 export default function PurchasesPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -18,12 +37,18 @@ export default function PurchasesPage() {
 
   const [supplierId, setSupplierId] = useState('');
   const [workGroupId, setWorkGroupId] = useState('');
-  const [items, setItems] = useState<DraftItem[]>([{ productId: '', quantity: '1', unitCost: '0' }]);
+  const [items, setItems] = useState<DraftItem[]>([emptyItem()]);
   const [submitting, setSubmitting] = useState(false);
 
   const [filterSupplierId, setFilterSupplierId] = useState('');
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editSupplierId, setEditSupplierId] = useState('');
+  const [editWorkGroupId, setEditWorkGroupId] = useState('');
+  const [editItems, setEditItems] = useState<DraftItem[]>([]);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   async function load(supplierFilter = filterSupplierId, from = filterFrom, to = filterTo) {
     setLoading(true);
@@ -76,7 +101,7 @@ export default function PurchasesPage() {
   }
 
   function addItemRow() {
-    setItems((prev) => [...prev, { productId: '', quantity: '1', unitCost: '0' }]);
+    setItems((prev) => [...prev, emptyItem()]);
   }
 
   function removeItemRow(index: number) {
@@ -98,12 +123,63 @@ export default function PurchasesPage() {
       });
       setSupplierId('');
       setWorkGroupId('');
-      setItems([{ productId: '', quantity: '1', unitCost: '0' }]);
+      setItems([emptyItem()]);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Error de conexión');
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  function startEdit(p: Purchase) {
+    setEditingId(p.id);
+    setEditSupplierId(p.supplier.id);
+    setEditWorkGroupId(p.workGroup?.id ?? '');
+    setEditItems(
+      p.items.map((i) => ({
+        productId: i.product.id,
+        quantity: String(i.quantity),
+        unitCost: String(i.unitCost),
+      })),
+    );
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+  }
+
+  function updateEditItem(index: number, patch: Partial<DraftItem>) {
+    setEditItems((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+  }
+
+  function addEditItemRow() {
+    setEditItems((prev) => [...prev, emptyItem()]);
+  }
+
+  function removeEditItemRow(index: number) {
+    setEditItems((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function handleSaveEdit(id: string) {
+    setSavingEdit(true);
+    setError(null);
+    try {
+      await api.patch(`/purchases/${id}`, {
+        supplierId: editSupplierId,
+        workGroupId: editWorkGroupId || undefined,
+        items: editItems.map((item) => ({
+          productId: item.productId,
+          quantity: Number(item.quantity),
+          unitCost: Number(item.unitCost),
+        })),
+      });
+      setEditingId(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Error de conexión');
+    } finally {
+      setSavingEdit(false);
     }
   }
 
@@ -156,7 +232,15 @@ export default function PurchasesPage() {
             <input
               type="number"
               min={0}
-              placeholder="Costo unitario (con IVA)"
+              placeholder="Costo unitario sin IVA"
+              value={netFromGross(item.unitCost)}
+              onChange={(e) => updateItem(index, { unitCost: grossFromNet(e.target.value) })}
+              required
+            />
+            <input
+              type="number"
+              min={0}
+              placeholder="Costo unitario con IVA"
               value={item.unitCost}
               onChange={(e) => updateItem(index, { unitCost: e.target.value })}
               required
@@ -212,33 +296,135 @@ export default function PurchasesPage() {
               <th>Neto</th>
               <th>IVA</th>
               <th>Total</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
-            {purchases.map((p) => (
-              <tr key={p.id}>
-                <td>{new Date(p.purchasedAt).toLocaleDateString('es-CL')}</td>
-                <td>{new Date(p.createdAt).toLocaleString('es-CL')}</td>
-                <td>{p.supplier.name}</td>
-                <td>{p.workGroup?.name ?? '—'}</td>
-                <td>
-                  <ul className="item-list">
-                    {p.items.map((i) => (
-                      <li key={i.id}>
-                        {i.quantity}× {i.product.name} — ${i.unitCost.toLocaleString('es-CL')} c/u = $
-                        {i.lineTotal.toLocaleString('es-CL')}
-                      </li>
-                    ))}
-                  </ul>
-                </td>
-                <td>${p.subtotalNet.toLocaleString('es-CL')}</td>
-                <td>${p.ivaAmount.toLocaleString('es-CL')}</td>
-                <td>${p.total.toLocaleString('es-CL')}</td>
-              </tr>
-            ))}
+            {purchases.map((p) => {
+              const isEditing = editingId === p.id;
+              return (
+                <tr key={p.id}>
+                  <td>{new Date(p.purchasedAt).toLocaleDateString('es-CL')}</td>
+                  <td>{new Date(p.createdAt).toLocaleString('es-CL')}</td>
+                  <td>
+                    {isEditing ? (
+                      <select value={editSupplierId} onChange={(e) => setEditSupplierId(e.target.value)}>
+                        {suppliers.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      p.supplier.name
+                    )}
+                  </td>
+                  <td>
+                    {isEditing ? (
+                      <select value={editWorkGroupId} onChange={(e) => setEditWorkGroupId(e.target.value)}>
+                        <option value="">Bodega (opcional)…</option>
+                        {workGroups.map((wg) => (
+                          <option key={wg.id} value={wg.id}>
+                            {wg.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      p.workGroup?.name ?? '—'
+                    )}
+                  </td>
+                  <td>
+                    {isEditing ? (
+                      <>
+                        {editItems.map((item, index) => (
+                          <div className="inline-form" key={index}>
+                            <select
+                              value={item.productId}
+                              onChange={(e) => updateEditItem(index, { productId: e.target.value })}
+                            >
+                              <option value="">Producto…</option>
+                              {products.map((prod) => (
+                                <option key={prod.id} value={prod.id}>
+                                  {prod.name}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              type="number"
+                              min={1}
+                              value={item.quantity}
+                              onChange={(e) => updateEditItem(index, { quantity: e.target.value })}
+                            />
+                            <input
+                              type="number"
+                              min={0}
+                              placeholder="Sin IVA"
+                              value={netFromGross(item.unitCost)}
+                              onChange={(e) => updateEditItem(index, { unitCost: grossFromNet(e.target.value) })}
+                            />
+                            <input
+                              type="number"
+                              min={0}
+                              placeholder="Con IVA"
+                              value={item.unitCost}
+                              onChange={(e) => updateEditItem(index, { unitCost: e.target.value })}
+                            />
+                            {editItems.length > 1 && (
+                              <button
+                                type="button"
+                                className="link-btn danger"
+                                onClick={() => removeEditItemRow(index)}
+                              >
+                                Quitar
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        <button type="button" className="link-btn" onClick={addEditItemRow}>
+                          + Agregar producto
+                        </button>
+                      </>
+                    ) : (
+                      <ul className="item-list">
+                        {p.items.map((i) => (
+                          <li key={i.id}>
+                            {i.quantity}× {i.product.name} — ${i.unitCost.toLocaleString('es-CL')} c/u = $
+                            {i.lineTotal.toLocaleString('es-CL')}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </td>
+                  <td>${p.subtotalNet.toLocaleString('es-CL')}</td>
+                  <td>${p.ivaAmount.toLocaleString('es-CL')}</td>
+                  <td>${p.total.toLocaleString('es-CL')}</td>
+                  <td>
+                    {isEditing ? (
+                      <>
+                        <button
+                          type="button"
+                          className="link-btn"
+                          disabled={savingEdit || editItems.some((item) => !item.productId)}
+                          onClick={() => handleSaveEdit(p.id)}
+                        >
+                          {savingEdit ? 'Guardando…' : 'Guardar'}
+                        </button>{' '}
+                        <button type="button" className="link-btn" onClick={cancelEdit}>
+                          Cancelar
+                        </button>
+                      </>
+                    ) : (
+                      <button type="button" className="link-btn" onClick={() => startEdit(p)}>
+                        Editar
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
             {purchases.length === 0 && (
               <tr>
-                <td colSpan={8}>Sin compras todavía.</td>
+                <td colSpan={9}>Sin compras todavía.</td>
               </tr>
             )}
           </tbody>

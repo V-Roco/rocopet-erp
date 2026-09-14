@@ -82,6 +82,110 @@ export class PurchasesService {
     });
   }
 
+  async update(id: string, dto: CreatePurchaseDto) {
+    const existing = await this.prisma.purchase.findUnique({ where: { id }, include: { items: true } });
+    if (!existing) {
+      throw new NotFoundException('Compra no encontrada');
+    }
+
+    const supplier = await this.prisma.supplier.findUnique({ where: { id: dto.supplierId } });
+    if (!supplier) {
+      throw new NotFoundException('Proveedor no encontrado');
+    }
+    if (dto.workGroupId) {
+      const workGroup = await this.prisma.workGroup.findUnique({ where: { id: dto.workGroupId } });
+      if (!workGroup) {
+        throw new NotFoundException('Lugar de trabajo no encontrado');
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const oldByProduct = new Map(existing.items.map((item) => [item.productId, item]));
+      const newProductIds = new Set(dto.items.map((item) => item.productId));
+
+      // Línea que ya no está en la venta editada: solo se puede quitar si
+      // nada de ese lote se vendió todavía (si no, hay unidades vendidas
+      // que quedarían sin lote de origen).
+      for (const oldItem of existing.items) {
+        if (newProductIds.has(oldItem.productId)) continue;
+        const consumed = oldItem.quantity - oldItem.remainingQty;
+        if (consumed > 0) {
+          const product = await tx.product.findUnique({ where: { id: oldItem.productId } });
+          throw new BadRequestException(
+            `No se puede quitar "${product?.name ?? oldItem.productId}": ya se vendieron ${consumed} unidad(es) de ese lote`,
+          );
+        }
+        await tx.product.update({ where: { id: oldItem.productId }, data: { quantity: { decrement: oldItem.quantity } } });
+        await tx.purchaseItem.delete({ where: { id: oldItem.id } });
+      }
+
+      let grossTotal = 0;
+      for (const item of dto.items) {
+        const oldItem = oldByProduct.get(item.productId);
+
+        if (!oldItem) {
+          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          if (!product) {
+            throw new NotFoundException(`Producto ${item.productId} no encontrado`);
+          }
+          const lineTotal = item.quantity * item.unitCost;
+          grossTotal += lineTotal;
+          await tx.purchaseItem.create({
+            data: {
+              purchaseId: id,
+              productId: item.productId,
+              quantity: item.quantity,
+              remainingQty: item.quantity,
+              unitCost: item.unitCost,
+              lineTotal,
+            },
+          });
+          await tx.product.update({ where: { id: item.productId }, data: { quantity: { increment: item.quantity } } });
+          continue;
+        }
+
+        const consumed = oldItem.quantity - oldItem.remainingQty;
+        if (item.quantity < consumed) {
+          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          throw new BadRequestException(
+            `No se puede bajar "${product?.name ?? item.productId}" a ${item.quantity}: ya se vendieron ${consumed} unidad(es) de ese lote`,
+          );
+        }
+
+        const lineTotal = item.quantity * item.unitCost;
+        grossTotal += lineTotal;
+        await tx.purchaseItem.update({
+          where: { id: oldItem.id },
+          data: {
+            quantity: item.quantity,
+            remainingQty: item.quantity - consumed,
+            unitCost: item.unitCost,
+            lineTotal,
+          },
+        });
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { quantity: { increment: item.quantity - oldItem.quantity } },
+        });
+      }
+
+      const { net, iva } = breakdownIva(grossTotal);
+      await tx.purchase.update({
+        where: { id },
+        data: {
+          supplierId: dto.supplierId,
+          workGroupId: dto.workGroupId,
+          subtotalNet: net,
+          ivaAmount: iva,
+          total: grossTotal,
+        },
+      });
+    });
+
+    const updated = await this.prisma.purchase.findUnique({ where: { id }, include: PURCHASE_INCLUDE });
+    return withIvaBreakdown(updated!);
+  }
+
   async findAll(productId?: string, supplierId?: string, workGroupId?: string, from?: string, to?: string) {
     if (from && to && startOfDay(from) > endOfDay(to)) {
       throw new BadRequestException('"from" no puede ser posterior a "to"');
