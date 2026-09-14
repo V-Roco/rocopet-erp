@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ResponsiveContainer,
   LineChart,
   Line,
   BarChart,
   Bar,
+  PieChart,
+  Pie,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -17,12 +20,36 @@ import { CHART_COLORS, formatCLP, formatDateLabel } from '../lib/chartTheme';
 
 const AXIS_STYLE = { fontSize: 12, fill: CHART_COLORS.textMuted };
 
+// Agrupa los puntos diarios de /sales/chart por mes (YYYY-MM) sumando costo
+// y utilidad — el endpoint solo entrega por día, así que el corte mensual
+// se arma acá en vez de agregar otro endpoint solo para esto.
+function aggregateByMonth(points: SalesChartPoint[]) {
+  const byMonth = new Map<string, { cost: number; profit: number }>();
+  for (const p of points) {
+    const month = p.date.slice(0, 7);
+    const entry = byMonth.get(month) ?? { cost: 0, profit: 0 };
+    entry.cost += p.cost;
+    entry.profit += p.profit;
+    byMonth.set(month, entry);
+  }
+  return byMonth;
+}
+
+function formatMonthLabel(month: string): string {
+  const label = new Date(`${month}-02T12:00:00`).toLocaleDateString('es-CL', {
+    month: 'long',
+    year: 'numeric',
+  });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 export default function ChartsPage() {
   const [sales, setSales] = useState<SalesChartPoint[]>([]);
   const [purchases, setPurchases] = useState<PurchasesChartPoint[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedMonth, setSelectedMonth] = useState('');
 
   useEffect(() => {
     async function load() {
@@ -36,6 +63,8 @@ export default function ChartsPage() {
         setSales(s);
         setPurchases(p);
         setProducts([...prod].sort((a, b) => b.quantity - a.quantity));
+        const months = [...aggregateByMonth(s).keys()].sort();
+        setSelectedMonth(months[months.length - 1] ?? '');
       } catch (err) {
         setError(err instanceof ApiError ? err.message : 'Error de conexión');
       } finally {
@@ -44,6 +73,16 @@ export default function ChartsPage() {
     }
     load();
   }, []);
+
+  const monthlyTotals = useMemo(() => aggregateByMonth(sales), [sales]);
+  const months = useMemo(() => [...monthlyTotals.keys()].sort(), [monthlyTotals]);
+  const selected = monthlyTotals.get(selectedMonth);
+  const pieData = selected
+    ? [
+        { name: 'Costos', value: selected.cost },
+        { name: 'Ganancias', value: selected.profit },
+      ]
+    : [];
 
   if (loading) return <p>Cargando…</p>;
 
@@ -147,6 +186,42 @@ export default function ChartsPage() {
               <Bar dataKey="quantity" name="Unidades" fill={CHART_COLORS.series1} radius={[4, 4, 0, 0]} maxBarSize={24} />
             </BarChart>
           </ResponsiveContainer>
+        )}
+      </div>
+
+      <div className="card">
+        <h3>Ventas — costos vs ganancias del mes</h3>
+        {months.length === 0 ? (
+          <p className="muted">Sin ventas todavía.</p>
+        ) : (
+          <>
+            <div className="inline-form">
+              <label>
+                Mes{' '}
+                <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
+                  {months.map((m) => (
+                    <option key={m} value={m}>
+                      {formatMonthLabel(m)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {selected && selected.cost + selected.profit > 0 ? (
+              <ResponsiveContainer width="100%" height={280}>
+                <PieChart>
+                  <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={(p) => `${p.name}: ${formatCLP(Number(p.value))}`}>
+                    <Cell fill={CHART_COLORS.series2} />
+                    <Cell fill={CHART_COLORS.series3} />
+                  </Pie>
+                  <Tooltip formatter={(value: unknown) => formatCLP(Number(value))} />
+                  <Legend wrapperStyle={{ fontSize: 12, color: CHART_COLORS.textSecondary }} />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="muted">Sin ventas en {formatMonthLabel(selectedMonth)}.</p>
+            )}
+          </>
         )}
       </div>
 
