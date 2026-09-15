@@ -340,6 +340,44 @@ export class SalesService {
     }));
   }
 
+  // Ranking de clientes por unidades compradas, más el día del mes promedio
+  // en que compran — sirve como referencia de cuándo esperar su próximo
+  // pedido. Las boletas anónimas (sin cliente) quedan fuera: no hay a quién
+  // atribuirles el patrón de compra.
+  async getCustomersChart() {
+    const sales = await this.prisma.sale.findMany({
+      where: { customerId: { not: null } },
+      select: {
+        customerId: true,
+        soldAt: true,
+        customer: { select: { name: true } },
+        items: { select: { quantity: true } },
+      },
+    });
+
+    const byCustomer = new Map<string, { name: string; totalQuantity: number; days: number[] }>();
+    for (const sale of sales) {
+      const entry = byCustomer.get(sale.customerId!) ?? {
+        name: sale.customer!.name,
+        totalQuantity: 0,
+        days: [],
+      };
+      entry.totalQuantity += sale.items.reduce((sum, item) => sum + item.quantity, 0);
+      entry.days.push(sale.soldAt.getUTCDate());
+      byCustomer.set(sale.customerId!, entry);
+    }
+
+    return Array.from(byCustomer.entries())
+      .map(([customerId, entry]) => ({
+        customerId,
+        customerName: entry.name,
+        totalQuantity: entry.totalQuantity,
+        orderCount: entry.days.length,
+        avgDayOfMonth: Math.round(entry.days.reduce((sum, d) => sum + d, 0) / entry.days.length),
+      }))
+      .sort((a, b) => b.totalQuantity - a.totalQuantity);
+  }
+
   async getReport(dto: QuerySalesReportDto) {
     const fromDate = startOfDay(dto.from);
     const toDate = endOfDay(dto.to);

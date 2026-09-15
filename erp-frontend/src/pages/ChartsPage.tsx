@@ -15,7 +15,7 @@ import {
   Legend,
 } from 'recharts';
 import { api, ApiError } from '../api/client';
-import type { Product, PurchasesChartPoint, SalesChartPoint } from '../api/types';
+import type { CustomerChartPoint, Product, PurchasesChartPoint, SalesChartPoint } from '../api/types';
 import { CHART_COLORS, formatCLP, formatDateLabel } from '../lib/chartTheme';
 
 const AXIS_STYLE = { fontSize: 12, fill: CHART_COLORS.textMuted };
@@ -47,6 +47,7 @@ export default function ChartsPage() {
   const [sales, setSales] = useState<SalesChartPoint[]>([]);
   const [purchases, setPurchases] = useState<PurchasesChartPoint[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [customersChart, setCustomersChart] = useState<CustomerChartPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState('');
@@ -55,14 +56,16 @@ export default function ChartsPage() {
     async function load() {
       setLoading(true);
       try {
-        const [s, p, prod] = await Promise.all([
+        const [s, p, prod, custChart] = await Promise.all([
           api.get<SalesChartPoint[]>('/sales/chart'),
           api.get<PurchasesChartPoint[]>('/purchases/chart'),
           api.get<Product[]>('/products'),
+          api.get<CustomerChartPoint[]>('/sales/customers-chart'),
         ]);
         setSales(s);
         setPurchases(p);
         setProducts([...prod].sort((a, b) => b.quantity - a.quantity));
+        setCustomersChart(custChart);
         const months = [...aggregateByMonth(s).keys()].sort();
         setSelectedMonth(months[months.length - 1] ?? '');
       } catch (err) {
@@ -73,6 +76,8 @@ export default function ChartsPage() {
     }
     load();
   }, []);
+
+  const topCustomers = customersChart.slice(0, 15);
 
   const monthlyTotals = useMemo(() => aggregateByMonth(sales), [sales]);
   const months = useMemo(() => [...monthlyTotals.keys()].sort(), [monthlyTotals]);
@@ -304,6 +309,62 @@ export default function ChartsPage() {
               <Bar dataKey="quantity" name="Unidades" fill={CHART_COLORS.series3} radius={[4, 4, 0, 0]} maxBarSize={24} />
             </BarChart>
           </ResponsiveContainer>
+        )}
+      </div>
+
+      <div className="card">
+        <h3>Clientes — quiénes compran más</h3>
+        {topCustomers.length === 0 ? (
+          <p className="muted">Sin ventas a clientes registrados todavía (las boletas anónimas no cuentan aquí).</p>
+        ) : (
+          <>
+            <ResponsiveContainer width="100%" height={Math.max(160, topCustomers.length * 36)}>
+              <BarChart data={topCustomers} layout="vertical" margin={{ left: 24 }}>
+                <CartesianGrid stroke={CHART_COLORS.grid} horizontal={false} />
+                <XAxis type="number" tick={AXIS_STYLE} axisLine={{ stroke: CHART_COLORS.axis }} tickLine={false} />
+                <YAxis
+                  type="category"
+                  dataKey="customerName"
+                  tick={AXIS_STYLE}
+                  axisLine={{ stroke: CHART_COLORS.axis }}
+                  tickLine={false}
+                  width={140}
+                />
+                <Tooltip formatter={(value: unknown) => [Number(value), 'Unidades compradas']} />
+                <Bar
+                  dataKey="totalQuantity"
+                  name="Unidades compradas"
+                  fill={CHART_COLORS.series1}
+                  radius={[0, 4, 4, 0]}
+                  maxBarSize={24}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+
+            <p className="muted" style={{ marginTop: 8 }}>
+              Día del mes promedio en que compra cada uno — referencia de cuándo esperar su próximo pedido.
+            </p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Cliente</th>
+                  <th>Unidades compradas</th>
+                  <th>N° de pedidos</th>
+                  <th>Día promedio de compra</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topCustomers.map((c) => (
+                  <tr key={c.customerId}>
+                    <td>{c.customerName}</td>
+                    <td>{c.totalQuantity}</td>
+                    <td>{c.orderCount}</td>
+                    <td>Día {c.avgDayOfMonth}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
         )}
       </div>
     </div>

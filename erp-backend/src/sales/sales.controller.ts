@@ -55,6 +55,11 @@ export class SalesController {
     return this.salesService.getChart();
   }
 
+  @Get('customers-chart')
+  getCustomersChart() {
+    return this.salesService.getCustomersChart();
+  }
+
   @Get('report')
   getReport(@Query() query: QuerySalesReportDto) {
     return this.salesService.getReport(query);

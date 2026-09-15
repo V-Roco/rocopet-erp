@@ -175,3 +175,11 @@ export interface PurchasesChartPoint {
   net: number;
   cost: number;
 }
+
+export interface CustomerChartPoint {
+  customerId: string;
+  customerName: string;
+  totalQuantity: number;
+  orderCount: number;
+  avgDayOfMonth: number;
+}
