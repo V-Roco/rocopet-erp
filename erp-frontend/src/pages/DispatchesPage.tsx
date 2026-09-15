@@ -132,7 +132,12 @@ export default function DispatchesPage() {
   }
 
   const pendingDispatches = dispatches.filter((d) => d.deliveryStatus !== 'COMPLETE');
-  const completedDispatches = dispatches.filter((d) => d.deliveryStatus === 'COMPLETE');
+  const deliveredDispatches = dispatches.filter(
+    (d) => d.deliveryStatus === 'COMPLETE' && d.paymentStatus !== 'COMPLETE',
+  );
+  const deliveredAndPaidDispatches = dispatches.filter(
+    (d) => d.deliveryStatus === 'COMPLETE' && d.paymentStatus === 'COMPLETE',
+  );
 
   return (
     <div>
@@ -178,17 +183,21 @@ export default function DispatchesPage() {
           {renderTable(pendingDispatches, 'Sin despachos pendientes.')}
 
           <h3>Entregados</h3>
-          {renderTable(completedDispatches, 'Sin despachos entregados todavía.')}
+          {renderTable(deliveredDispatches, 'Sin despachos entregados todavía.')}
+
+          <h3>Entregados y pagados</h3>
+          {renderTable(deliveredAndPaidDispatches, 'Sin despachos entregados y pagados todavía.', true)}
         </>
       )}
     </div>
   );
 
-  function renderTable(list: Dispatch[], emptyMessage: string) {
+  function renderTable(list: Dispatch[], emptyMessage: string, showSoldDate = false) {
     return (
       <table>
         <thead>
           <tr>
+            {showSoldDate && <th>Fecha venta</th>}
             <th>Cliente</th>
             <th>Dirección</th>
             <th>Productos</th>
@@ -202,6 +211,7 @@ export default function DispatchesPage() {
             const draft = drafts[d.id] ?? draftFrom(d);
             return (
               <tr key={d.id}>
+                  {showSoldDate && <td>{new Date(d.sale.soldAt).toLocaleDateString('es-CL')}</td>}
                   <td>{d.sale.customer?.name ?? 'Cliente anónimo'}</td>
                   <td>{d.sale.customer?.address ?? '—'}</td>
                   <td>
@@ -314,7 +324,7 @@ export default function DispatchesPage() {
             })}
             {list.length === 0 && (
               <tr>
-                <td colSpan={6}>{emptyMessage}</td>
+                <td colSpan={showSoldDate ? 7 : 6}>{emptyMessage}</td>
               </tr>
             )}
           </tbody>
