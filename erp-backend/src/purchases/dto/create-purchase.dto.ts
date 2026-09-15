@@ -19,11 +19,6 @@ export class CreatePurchaseDto {
   @IsUUID()
   supplierId: string;
 
-  // Bodega (lugar de trabajo) a la que entra el stock. Opcional.
-  @IsOptional()
-  @IsUUID()
-  workGroupId?: string;
-
   @IsArray()
   @ArrayMinSize(1, { message: 'La compra debe tener al menos un producto' })
   @ValidateNested({ each: true })

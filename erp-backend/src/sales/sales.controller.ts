@@ -8,13 +8,14 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { diskStorage } from 'multer';
 import { randomUUID } from 'crypto';
 import { existsSync } from 'fs';
@@ -23,6 +24,7 @@ import { join } from 'path';
 import { InvoiceType, PaymentStatus, SystemRole } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RequireRole, SystemRoleGuard } from '../auth/guards/system-role.guard';
+import { getActiveWorkGroupId } from '../common/utils/work-group.util';
 import { SalesService } from './sales.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { QuerySalesReportDto } from './dto/query-sales-report.dto';
@@ -36,43 +38,44 @@ export class SalesController {
   constructor(private readonly salesService: SalesService) {}
 
   @Post()
-  create(@Body() dto: CreateSaleDto) {
-    return this.salesService.create(dto);
+  create(@Body() dto: CreateSaleDto, @Req() req: Request) {
+    return this.salesService.create(dto, getActiveWorkGroupId(req));
   }
 
   @Get()
   findAll(
+    @Req() req: Request,
     @Query('customerId') customerId?: string,
     @Query('paymentStatus') paymentStatus?: PaymentStatus,
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    return this.salesService.findAll(customerId, paymentStatus, from, to);
+    return this.salesService.findAll(getActiveWorkGroupId(req), customerId, paymentStatus, from, to);
   }
 
   @Get('chart')
-  getChart() {
-    return this.salesService.getChart();
+  getChart(@Req() req: Request) {
+    return this.salesService.getChart(getActiveWorkGroupId(req));
   }
 
   @Get('customers-chart')
-  getCustomersChart() {
-    return this.salesService.getCustomersChart();
+  getCustomersChart(@Req() req: Request) {
+    return this.salesService.getCustomersChart(getActiveWorkGroupId(req));
   }
 
   @Get('report')
-  getReport(@Query() query: QuerySalesReportDto) {
-    return this.salesService.getReport(query);
+  getReport(@Query() query: QuerySalesReportDto, @Req() req: Request) {
+    return this.salesService.getReport(query, getActiveWorkGroupId(req));
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.salesService.findOne(id);
+  findOne(@Param('id') id: string, @Req() req: Request) {
+    return this.salesService.findOne(id, getActiveWorkGroupId(req));
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: CreateSaleDto) {
-    return this.salesService.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: CreateSaleDto, @Req() req: Request) {
+    return this.salesService.update(id, dto, getActiveWorkGroupId(req));
   }
 
   @Post(':id/invoice')
@@ -94,6 +97,7 @@ export class SalesController {
   )
   async uploadInvoice(
     @Param('id') id: string,
+    @Req() req: Request,
     @UploadedFile() file?: Express.Multer.File,
     @Body('folio') folio?: string,
     @Body('type') type?: InvoiceType,
@@ -102,7 +106,13 @@ export class SalesController {
       throw new BadRequestException('Falta el archivo PDF de la factura');
     }
     try {
-      return await this.salesService.setInvoiceUrl(id, `uploads/invoices/${file.filename}`, folio, type);
+      return await this.salesService.setInvoiceUrl(
+        id,
+        getActiveWorkGroupId(req),
+        `uploads/invoices/${file.filename}`,
+        folio,
+        type,
+      );
     } catch (error) {
       // El archivo ya se escribió a disco antes de llegar acá (lo hace el
       // interceptor); si el guardado en la venta falla, no debe quedar huérfano.
@@ -112,8 +122,8 @@ export class SalesController {
   }
 
   @Get(':id/invoice')
-  async downloadInvoice(@Param('id') id: string, @Res() res: Response) {
-    const invoiceUrl = await this.salesService.getInvoiceUrl(id);
+  async downloadInvoice(@Param('id') id: string, @Req() req: Request, @Res() res: Response) {
+    const invoiceUrl = await this.salesService.getInvoiceUrl(id, getActiveWorkGroupId(req));
     const filePath = join(process.cwd(), ...invoiceUrl.split('/'));
     if (!existsSync(filePath)) {
       throw new NotFoundException('El archivo de la factura ya no existe');

@@ -11,7 +11,7 @@ import { UpdateCustomerDto } from './dto/update-customer.dto';
 export class CustomersService {
   constructor(private prisma: PrismaService) {}
 
-  async create(dto: CreateCustomerDto) {
+  async create(dto: CreateCustomerDto, workGroupId: string) {
     if (!validarRut(dto.rut)) {
       throw new BadRequestException('RUT inválido');
     }
@@ -30,6 +30,7 @@ export class CustomersService {
           businessHours: dto.businessHours,
           latitude: coords?.lat,
           longitude: coords?.lng,
+          workGroupId,
         },
       });
     } catch (error) {
@@ -40,20 +41,20 @@ export class CustomersService {
     }
   }
 
-  findAll() {
-    return this.prisma.customer.findMany({ orderBy: { name: 'asc' } });
+  findAll(workGroupId: string) {
+    return this.prisma.customer.findMany({ where: { workGroupId }, orderBy: { name: 'asc' } });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, workGroupId: string) {
     const customer = await this.prisma.customer.findUnique({ where: { id } });
-    if (!customer) {
+    if (!customer || customer.workGroupId !== workGroupId) {
       throw new NotFoundException('Cliente no encontrado');
     }
     return customer;
   }
 
-  async update(id: string, dto: UpdateCustomerDto) {
-    await this.findOne(id);
+  async update(id: string, dto: UpdateCustomerDto, workGroupId: string) {
+    await this.findOne(id, workGroupId);
 
     if (dto.rut && !validarRut(dto.rut)) {
       throw new BadRequestException('RUT inválido');
@@ -89,8 +90,8 @@ export class CustomersService {
     }
   }
 
-  async remove(id: string) {
-    await this.findOne(id);
+  async remove(id: string, workGroupId: string) {
+    await this.findOne(id, workGroupId);
 
     try {
       return await this.prisma.customer.delete({ where: { id } });

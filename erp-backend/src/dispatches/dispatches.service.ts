@@ -22,9 +22,10 @@ const DISPATCH_INCLUDE = {
 export class DispatchesService {
   constructor(private prisma: PrismaService) {}
 
-  findAll(deliveryStatus?: DeliveryStatus, paymentStatus?: PaymentStatus) {
+  findAll(workGroupId: string, deliveryStatus?: DeliveryStatus, paymentStatus?: PaymentStatus) {
     return this.prisma.dispatch.findMany({
       where: {
+        sale: { workGroupId },
         ...(deliveryStatus && { deliveryStatus }),
         ...(paymentStatus && { paymentStatus }),
       },
@@ -33,9 +34,9 @@ export class DispatchesService {
     });
   }
 
-  async findOne(id: string) {
-    const dispatch = await this.prisma.dispatch.findUnique({
-      where: { id },
+  async findOne(id: string, workGroupId: string) {
+    const dispatch = await this.prisma.dispatch.findFirst({
+      where: { id, sale: { workGroupId } },
       include: DISPATCH_INCLUDE,
     });
     if (!dispatch) {
@@ -44,8 +45,8 @@ export class DispatchesService {
     return dispatch;
   }
 
-  async update(id: string, dto: UpdateDispatchDto) {
-    const dispatch = await this.findOne(id);
+  async update(id: string, dto: UpdateDispatchDto, workGroupId: string) {
+    const dispatch = await this.findOne(id, workGroupId);
 
     const paymentStatus = dto.paymentStatus ?? dispatch.paymentStatus;
     const paymentMethod = dto.paymentMethod ?? dispatch.paymentMethod;
@@ -91,9 +92,10 @@ export class DispatchesService {
     });
   }
 
-  async getPending() {
+  async getPending(workGroupId: string) {
     const dispatches = await this.prisma.dispatch.findMany({
       where: {
+        sale: { workGroupId },
         OR: [
           { deliveryStatus: { not: DeliveryStatus.COMPLETE } },
           { paymentStatus: { not: PaymentStatus.COMPLETE } },
@@ -108,9 +110,9 @@ export class DispatchesService {
     return { summary, dispatches };
   }
 
-  async getAccountsReceivable() {
+  async getAccountsReceivable(workGroupId: string) {
     const dispatches = await this.prisma.dispatch.findMany({
-      where: { paymentStatus: { not: PaymentStatus.COMPLETE } },
+      where: { sale: { workGroupId }, paymentStatus: { not: PaymentStatus.COMPLETE } },
       // Los cheques por vencer primero (los que no son cheque quedan al final, con checkDueDate null).
       orderBy: [{ checkDueDate: { sort: 'asc', nulls: 'last' } }, { createdAt: 'asc' }],
       include: DISPATCH_INCLUDE,
@@ -121,7 +123,7 @@ export class DispatchesService {
     return { summary, dispatches };
   }
 
-  async getReport(from: string, to: string) {
+  async getReport(from: string, to: string, workGroupId: string) {
     const fromDate = startOfDay(from);
     const toDate = endOfDay(to);
     if (fromDate > toDate) {
@@ -129,7 +131,7 @@ export class DispatchesService {
     }
 
     const dispatches = await this.prisma.dispatch.findMany({
-      where: { sale: { soldAt: { gte: fromDate, lte: toDate } } },
+      where: { sale: { workGroupId, soldAt: { gte: fromDate, lte: toDate } } },
       orderBy: { createdAt: 'desc' },
       include: DISPATCH_INCLUDE,
     });
@@ -139,7 +141,7 @@ export class DispatchesService {
     return { from, to, summary, dispatches };
   }
 
-  async getCalendar(from: string, to: string) {
+  async getCalendar(from: string, to: string, workGroupId: string) {
     const fromDate = startOfDay(from);
     const toDate = endOfDay(to);
     if (fromDate > toDate) {
@@ -147,7 +149,7 @@ export class DispatchesService {
     }
 
     const dispatches = await this.prisma.dispatch.findMany({
-      where: { scheduledFor: { gte: fromDate, lte: toDate } },
+      where: { sale: { workGroupId }, scheduledFor: { gte: fromDate, lte: toDate } },
       orderBy: { scheduledFor: 'asc' },
       include: DISPATCH_INCLUDE,
     });
@@ -165,9 +167,9 @@ export class DispatchesService {
       .map(([date, items]) => ({ date, dispatches: items }));
   }
 
-  async updateItem(dispatchId: string, itemId: string, dto: UpdateDispatchItemDto) {
-    const item = await this.prisma.dispatchItem.findUnique({
-      where: { id: itemId },
+  async updateItem(dispatchId: string, itemId: string, dto: UpdateDispatchItemDto, workGroupId: string) {
+    const item = await this.prisma.dispatchItem.findFirst({
+      where: { id: itemId, dispatch: { sale: { workGroupId } } },
       include: { saleItem: true },
     });
     if (!item || item.dispatchId !== dispatchId) {

@@ -7,16 +7,19 @@ import {
   Param,
   Patch,
   Post,
+  Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Request } from 'express';
 import { randomUUID } from 'crypto';
 import { diskStorage } from 'multer';
 import { SystemRole } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RequireRole, SystemRoleGuard } from '../auth/guards/system-role.guard';
+import { getActiveWorkGroupId } from '../common/utils/work-group.util';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -64,26 +67,26 @@ export class ProductsController {
   @UseGuards(SystemRoleGuard)
   @RequireRole(SystemRole.ADMIN, SystemRole.PARTNER)
   @UseInterceptors(productImageInterceptor)
-  create(@Body() dto: CreateProductDto, @UploadedFile() file?: Express.Multer.File) {
+  create(@Body() dto: CreateProductDto, @Req() req: Request, @UploadedFile() file?: Express.Multer.File) {
     const imageUrl = file ? `/uploads/products/${file.filename}` : null;
-    return this.productsService.create(dto, imageUrl);
+    return this.productsService.create(dto, imageUrl, getActiveWorkGroupId(req));
   }
 
   @Get()
-  findAll() {
-    return this.productsService.findAll();
+  findAll(@Req() req: Request) {
+    return this.productsService.findAll(getActiveWorkGroupId(req));
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.productsService.findOne(id);
+  findOne(@Param('id') id: string, @Req() req: Request) {
+    return this.productsService.findOne(id, getActiveWorkGroupId(req));
   }
 
   @Get(':id/stock-value')
   @UseGuards(SystemRoleGuard)
   @RequireRole(SystemRole.ADMIN, SystemRole.PARTNER)
-  getStockValue(@Param('id') id: string) {
-    return this.productsService.getStockValue(id);
+  getStockValue(@Param('id') id: string, @Req() req: Request) {
+    return this.productsService.getStockValue(id, getActiveWorkGroupId(req));
   }
 
   @Patch(':id')
@@ -93,16 +96,17 @@ export class ProductsController {
   update(
     @Param('id') id: string,
     @Body() dto: UpdateProductDto,
+    @Req() req: Request,
     @UploadedFile() file?: Express.Multer.File,
   ) {
     const imageUrl = file ? `/uploads/products/${file.filename}` : undefined;
-    return this.productsService.update(id, dto, imageUrl);
+    return this.productsService.update(id, dto, getActiveWorkGroupId(req), imageUrl);
   }
 
   @Delete(':id')
   @UseGuards(SystemRoleGuard)
   @RequireRole(SystemRole.ADMIN, SystemRole.PARTNER)
-  remove(@Param('id') id: string) {
-    return this.productsService.remove(id);
+  remove(@Param('id') id: string, @Req() req: Request) {
+    return this.productsService.remove(id, getActiveWorkGroupId(req));
   }
 }

@@ -67,6 +67,10 @@ model WorkGroup {
 
   users     User[]
   purchases Purchase[]
+  products  Product[]
+  suppliers Supplier[]
+  customers Customer[]
+  sales     Sale[]
 }
 
 model Product {
@@ -76,11 +80,17 @@ model Product {
   // Umbral bajo el cual el producto se marca como "stock bajo" en el frontend.
   minStock  Int      @default(5)
   imageUrl  String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  // A qué lugar de trabajo pertenece este producto — cada bodega tiene su
+  // propio inventario, no se comparte entre lugares de trabajo.
+  workGroupId String
+  workGroup   WorkGroup @relation(fields: [workGroupId], references: [id])
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 
   purchaseItems PurchaseItem[]
   saleItems     SaleItem[]
+
+  @@index([workGroupId])
 }
 
 // Un vendedor/proveedor al que se le compran productos. Un mismo producto
@@ -89,14 +99,21 @@ model Product {
 model Supplier {
   id        String   @id @default(uuid())
   name      String
-  rut       String   @unique
+  // Único por lugar de trabajo, no global: el mismo proveedor real puede
+  // estar registrado por separado en más de una bodega.
+  rut       String
   phone     String?
   email     String?
   address   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  workGroupId String
+  workGroup   WorkGroup @relation(fields: [workGroupId], references: [id])
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 
   purchases Purchase[]
+
+  @@unique([rut, workGroupId])
+  @@index([workGroupId])
 }
 
 // Cabecera de una compra: uno o varios productos (PurchaseItem) a un mismo
@@ -107,10 +124,9 @@ model Purchase {
   id          String     @id @default(uuid())
   supplierId  String
   supplier    Supplier   @relation(fields: [supplierId], references: [id])
-  // Bodega (lugar de trabajo) a la que entra el stock de esta compra. Opcional:
-  // no todas las compras necesitan quedar asociadas a una bodega específica.
-  workGroupId String?
-  workGroup   WorkGroup? @relation(fields: [workGroupId], references: [id])
+  // Bodega (lugar de trabajo) a la que entra el stock de esta compra.
+  workGroupId String
+  workGroup   WorkGroup  @relation(fields: [workGroupId], references: [id])
   subtotalNet Int
   ivaAmount   Int
   total       Int
@@ -145,7 +161,9 @@ model PurchaseItem {
 model Customer {
   id            String   @id @default(uuid())
   name          String
-  rut           String   @unique
+  // Único por lugar de trabajo, no global: el mismo cliente real puede
+  // estar registrado por separado en más de una bodega.
+  rut           String
   // Giro/actividad económica: lo exige el SII en el encabezado de toda
   // factura electrónica (no aplica a boleta). Opcional porque un cliente
   // registrado solo para boletas no necesita completarlo.
@@ -156,10 +174,15 @@ model Customer {
   latitude      Float?
   longitude     Float?
   businessHours String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  workGroupId   String
+  workGroup     WorkGroup @relation(fields: [workGroupId], references: [id])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   sales Sale[]
+
+  @@unique([rut, workGroupId])
+  @@index([workGroupId])
 }
 
 // Cabecera de una venta: uno o varios productos (SaleItem). El cliente es
@@ -173,6 +196,8 @@ model Sale {
   id          String    @id @default(uuid())
   customerId  String?
   customer    Customer? @relation(fields: [customerId], references: [id])
+  workGroupId String
+  workGroup   WorkGroup @relation(fields: [workGroupId], references: [id])
   subtotalNet Int
   ivaAmount   Int
   total       Int
@@ -194,6 +219,7 @@ model Sale {
   dispatch Dispatch?
 
   @@index([customerId, soldAt])
+  @@index([workGroupId])
 }
 
 model SaleItem {

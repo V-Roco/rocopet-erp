@@ -11,30 +11,31 @@ import { breakdownIva } from '../common/utils/iva.util';
 export class ProductsService {
   constructor(private prisma: PrismaService) {}
 
-  create(dto: CreateProductDto, imageUrl: string | null) {
+  create(dto: CreateProductDto, imageUrl: string | null, workGroupId: string) {
     return this.prisma.product.create({
       data: {
         name: dto.name,
         ...(dto.minStock !== undefined && { minStock: dto.minStock }),
         imageUrl,
+        workGroupId,
       },
     });
   }
 
-  findAll() {
-    return this.prisma.product.findMany({ orderBy: { createdAt: 'desc' } });
+  findAll(workGroupId: string) {
+    return this.prisma.product.findMany({ where: { workGroupId }, orderBy: { createdAt: 'desc' } });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, workGroupId: string) {
     const product = await this.prisma.product.findUnique({ where: { id } });
-    if (!product) {
+    if (!product || product.workGroupId !== workGroupId) {
       throw new NotFoundException('Producto no encontrado');
     }
     return product;
   }
 
-  async getStockValue(productId: string) {
-    const product = await this.findOne(productId);
+  async getStockValue(productId: string, workGroupId: string) {
+    const product = await this.findOne(productId, workGroupId);
 
     const batches = await this.prisma.purchaseItem.findMany({
       where: { productId, remainingQty: { gt: 0 } },
@@ -56,8 +57,8 @@ export class ProductsService {
     };
   }
 
-  async update(id: string, dto: UpdateProductDto, imageUrl?: string | null) {
-    const product = await this.findOne(id);
+  async update(id: string, dto: UpdateProductDto, workGroupId: string, imageUrl?: string | null) {
+    const product = await this.findOne(id, workGroupId);
 
     if (imageUrl !== undefined && product.imageUrl) {
       await this.deleteImageFile(product.imageUrl);
@@ -73,8 +74,8 @@ export class ProductsService {
     });
   }
 
-  async remove(id: string) {
-    const product = await this.findOne(id);
+  async remove(id: string, workGroupId: string) {
+    const product = await this.findOne(id, workGroupId);
 
     try {
       await this.prisma.product.delete({ where: { id } });

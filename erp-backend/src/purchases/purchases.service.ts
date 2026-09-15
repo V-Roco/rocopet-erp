@@ -21,16 +21,10 @@ const PURCHASE_INCLUDE = {
 export class PurchasesService {
   constructor(private prisma: PrismaService) {}
 
-  async create(dto: CreatePurchaseDto) {
-    const supplier = await this.prisma.supplier.findUnique({ where: { id: dto.supplierId } });
+  async create(dto: CreatePurchaseDto, workGroupId: string) {
+    const supplier = await this.prisma.supplier.findFirst({ where: { id: dto.supplierId, workGroupId } });
     if (!supplier) {
       throw new NotFoundException('Proveedor no encontrado');
-    }
-    if (dto.workGroupId) {
-      const workGroup = await this.prisma.workGroup.findUnique({ where: { id: dto.workGroupId } });
-      if (!workGroup) {
-        throw new NotFoundException('Lugar de trabajo no encontrado');
-      }
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -44,7 +38,7 @@ export class PurchasesService {
       }[] = [];
 
       for (const item of dto.items) {
-        const product = await tx.product.findUnique({ where: { id: item.productId } });
+        const product = await tx.product.findFirst({ where: { id: item.productId, workGroupId } });
         if (!product) {
           throw new NotFoundException(`Producto ${item.productId} no encontrado`);
         }
@@ -70,7 +64,7 @@ export class PurchasesService {
       return tx.purchase.create({
         data: {
           supplierId: dto.supplierId,
-          workGroupId: dto.workGroupId,
+          workGroupId,
           subtotalNet: net,
           ivaAmount: iva,
           total: grossTotal,
@@ -82,21 +76,18 @@ export class PurchasesService {
     });
   }
 
-  async update(id: string, dto: CreatePurchaseDto) {
-    const existing = await this.prisma.purchase.findUnique({ where: { id }, include: { items: true } });
+  async update(id: string, dto: CreatePurchaseDto, workGroupId: string) {
+    const existing = await this.prisma.purchase.findFirst({
+      where: { id, workGroupId },
+      include: { items: true },
+    });
     if (!existing) {
       throw new NotFoundException('Compra no encontrada');
     }
 
-    const supplier = await this.prisma.supplier.findUnique({ where: { id: dto.supplierId } });
+    const supplier = await this.prisma.supplier.findFirst({ where: { id: dto.supplierId, workGroupId } });
     if (!supplier) {
       throw new NotFoundException('Proveedor no encontrado');
-    }
-    if (dto.workGroupId) {
-      const workGroup = await this.prisma.workGroup.findUnique({ where: { id: dto.workGroupId } });
-      if (!workGroup) {
-        throw new NotFoundException('Lugar de trabajo no encontrado');
-      }
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -124,7 +115,7 @@ export class PurchasesService {
         const oldItem = oldByProduct.get(item.productId);
 
         if (!oldItem) {
-          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          const product = await tx.product.findFirst({ where: { id: item.productId, workGroupId } });
           if (!product) {
             throw new NotFoundException(`Producto ${item.productId} no encontrado`);
           }
@@ -174,7 +165,6 @@ export class PurchasesService {
         where: { id },
         data: {
           supplierId: dto.supplierId,
-          workGroupId: dto.workGroupId,
           subtotalNet: net,
           ivaAmount: iva,
           total: grossTotal,
@@ -186,16 +176,16 @@ export class PurchasesService {
     return withIvaBreakdown(updated!);
   }
 
-  async findAll(productId?: string, supplierId?: string, workGroupId?: string, from?: string, to?: string) {
+  async findAll(workGroupId: string, productId?: string, supplierId?: string, from?: string, to?: string) {
     if (from && to && startOfDay(from) > endOfDay(to)) {
       throw new BadRequestException('"from" no puede ser posterior a "to"');
     }
 
     const purchases = await this.prisma.purchase.findMany({
       where: {
+        workGroupId,
         ...(productId && { items: { some: { productId } } }),
         ...(supplierId && { supplierId }),
-        ...(workGroupId && { workGroupId }),
         ...((from || to) && {
           purchasedAt: {
             ...(from && { gte: startOfDay(from) }),
@@ -209,9 +199,9 @@ export class PurchasesService {
     return purchases.map(withIvaBreakdown);
   }
 
-  async getChart() {
+  async getChart(workGroupId: string) {
     const purchases = await this.prisma.purchase.findMany({
-      where: EXCLUDE_ADJUSTMENTS,
+      where: { workGroupId, ...EXCLUDE_ADJUSTMENTS },
       orderBy: { purchasedAt: 'asc' },
       include: { items: true },
     });
@@ -229,7 +219,7 @@ export class PurchasesService {
     return Array.from(byDay.values());
   }
 
-  async getReport(dto: QueryPurchasesReportDto) {
+  async getReport(dto: QueryPurchasesReportDto, workGroupId: string) {
     const fromDate = startOfDay(dto.from);
     const toDate = endOfDay(dto.to);
     if (fromDate > toDate) {
@@ -244,6 +234,7 @@ export class PurchasesService {
         where: {
           productId: dto.productId,
           purchase: {
+            workGroupId,
             purchasedAt: { gte: fromDate, lte: toDate },
             ...(dto.supplierId && { supplierId: dto.supplierId }),
             ...EXCLUDE_ADJUSTMENTS,
@@ -272,6 +263,7 @@ export class PurchasesService {
 
     const purchases = await this.prisma.purchase.findMany({
       where: {
+        workGroupId,
         purchasedAt: { gte: fromDate, lte: toDate },
         ...(dto.supplierId && { supplierId: dto.supplierId }),
         ...EXCLUDE_ADJUSTMENTS,

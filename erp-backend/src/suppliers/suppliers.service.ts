@@ -10,7 +10,7 @@ import { UpdateSupplierDto } from './dto/update-supplier.dto';
 export class SuppliersService {
   constructor(private prisma: PrismaService) {}
 
-  async create(dto: CreateSupplierDto) {
+  async create(dto: CreateSupplierDto, workGroupId: string) {
     if (!validarRut(dto.rut)) {
       throw new BadRequestException('RUT inválido');
     }
@@ -23,6 +23,7 @@ export class SuppliersService {
           phone: dto.phone,
           email: dto.email,
           address: dto.address,
+          workGroupId,
         },
       });
     } catch (error) {
@@ -33,20 +34,20 @@ export class SuppliersService {
     }
   }
 
-  findAll() {
-    return this.prisma.supplier.findMany({ orderBy: { name: 'asc' } });
+  findAll(workGroupId: string) {
+    return this.prisma.supplier.findMany({ where: { workGroupId }, orderBy: { name: 'asc' } });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, workGroupId: string) {
     const supplier = await this.prisma.supplier.findUnique({ where: { id } });
-    if (!supplier) {
+    if (!supplier || supplier.workGroupId !== workGroupId) {
       throw new NotFoundException('Proveedor no encontrado');
     }
     return supplier;
   }
 
-  async update(id: string, dto: UpdateSupplierDto) {
-    await this.findOne(id);
+  async update(id: string, dto: UpdateSupplierDto, workGroupId: string) {
+    await this.findOne(id, workGroupId);
 
     if (dto.rut && !validarRut(dto.rut)) {
       throw new BadRequestException('RUT inválido');
@@ -71,8 +72,8 @@ export class SuppliersService {
     }
   }
 
-  async remove(id: string) {
-    await this.findOne(id);
+  async remove(id: string, workGroupId: string) {
+    await this.findOne(id, workGroupId);
 
     try {
       return await this.prisma.supplier.delete({ where: { id } });

@@ -14,6 +14,7 @@ function getToken(): string | null {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
+  const workGroupId = localStorage.getItem('active_work_group_id');
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),
   };
@@ -22,6 +23,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+  }
+  // Le dice al backend qué lugar de trabajo está activo, para que
+  // productos/clientes/proveedores/ventas/compras se filtren a los de esa
+  // bodega. Antes de loguearse no hay ninguno guardado todavía, pero
+  // tampoco hace falta (login/me no filtran nada por bodega).
+  if (workGroupId) {
+    headers['X-Work-Group-Id'] = workGroupId;
   }
 
   const res = await fetch(`${API_URL}${path}`, { ...options, headers });

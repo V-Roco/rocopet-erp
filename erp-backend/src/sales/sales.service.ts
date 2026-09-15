@@ -33,13 +33,14 @@ export class SalesService {
   private async consumeFifo(
     tx: Prisma.TransactionClient,
     items: SaleItemDto[],
+    workGroupId: string,
   ): Promise<{ itemsData: SaleItemRow[]; grossTotal: number; totalCostOfGoods: number }> {
     let grossTotal = 0;
     let totalCostOfGoods = 0;
     const itemsData: SaleItemRow[] = [];
 
     for (const item of items) {
-      const product = await tx.product.findUnique({ where: { id: item.productId } });
+      const product = await tx.product.findFirst({ where: { id: item.productId, workGroupId } });
       if (!product) {
         throw new NotFoundException(`Producto ${item.productId} no encontrado`);
       }
@@ -101,13 +102,14 @@ export class SalesService {
   private async releaseFifo(
     tx: Prisma.TransactionClient,
     items: { productId: string; quantity: number; costOfGoods: number }[],
+    workGroupId: string,
   ) {
     if (items.length === 0) return;
 
     const supplier = await tx.supplier.upsert({
-      where: { rut: ADJUSTMENT_SUPPLIER_RUT },
+      where: { rut_workGroupId: { rut: ADJUSTMENT_SUPPLIER_RUT, workGroupId } },
       update: {},
-      create: { name: 'Ajustes de inventario', rut: ADJUSTMENT_SUPPLIER_RUT },
+      create: { name: 'Ajustes de inventario', rut: ADJUSTMENT_SUPPLIER_RUT, workGroupId },
     });
 
     let grossTotal = 0;
@@ -139,6 +141,7 @@ export class SalesService {
     await tx.purchase.create({
       data: {
         supplierId: supplier.id,
+        workGroupId,
         subtotalNet: net,
         ivaAmount: iva,
         total: grossTotal,
@@ -147,21 +150,22 @@ export class SalesService {
     });
   }
 
-  async create(dto: CreateSaleDto) {
+  async create(dto: CreateSaleDto, workGroupId: string) {
     if (dto.customerId) {
-      const customer = await this.prisma.customer.findUnique({ where: { id: dto.customerId } });
+      const customer = await this.prisma.customer.findFirst({ where: { id: dto.customerId, workGroupId } });
       if (!customer) {
         throw new NotFoundException('Cliente no encontrado');
       }
     }
 
     const saleId = await this.prisma.$transaction(async (tx) => {
-      const { itemsData, grossTotal, totalCostOfGoods } = await this.consumeFifo(tx, dto.items);
+      const { itemsData, grossTotal, totalCostOfGoods } = await this.consumeFifo(tx, dto.items, workGroupId);
       const { net, iva } = breakdownIva(grossTotal);
 
       const sale = await tx.sale.create({
         data: {
           customerId: dto.customerId,
+          workGroupId,
           subtotalNet: net,
           ivaAmount: iva,
           total: grossTotal,
@@ -190,15 +194,15 @@ export class SalesService {
       return sale.id;
     });
 
-    return this.findOne(saleId);
+    return this.findOne(saleId, workGroupId);
   }
 
   // Solo se puede editar mientras no se haya registrado ningún pago: una
   // vez que hay plata de por medio, cambiar montos dejaría el pago
   // descuadrado respecto a lo que realmente se debe.
-  async update(id: string, dto: CreateSaleDto) {
-    const existing = await this.prisma.sale.findUnique({
-      where: { id },
+  async update(id: string, dto: CreateSaleDto, workGroupId: string) {
+    const existing = await this.prisma.sale.findFirst({
+      where: { id, workGroupId },
       include: { items: true, dispatch: true },
     });
     if (!existing) {
@@ -208,21 +212,21 @@ export class SalesService {
       throw new ConflictException('No se puede editar una venta que ya tiene pagos registrados');
     }
     if (dto.customerId) {
-      const customer = await this.prisma.customer.findUnique({ where: { id: dto.customerId } });
+      const customer = await this.prisma.customer.findFirst({ where: { id: dto.customerId, workGroupId } });
       if (!customer) {
         throw new NotFoundException('Cliente no encontrado');
       }
     }
 
     await this.prisma.$transaction(async (tx) => {
-      await this.releaseFifo(tx, existing.items);
+      await this.releaseFifo(tx, existing.items, workGroupId);
 
       if (existing.dispatch) {
         await tx.dispatchItem.deleteMany({ where: { dispatchId: existing.dispatch.id } });
       }
       await tx.saleItem.deleteMany({ where: { saleId: id } });
 
-      const { itemsData, grossTotal, totalCostOfGoods } = await this.consumeFifo(tx, dto.items);
+      const { itemsData, grossTotal, totalCostOfGoods } = await this.consumeFifo(tx, dto.items, workGroupId);
       const { net, iva } = breakdownIva(grossTotal);
 
       const sale = await tx.sale.update({
@@ -253,10 +257,10 @@ export class SalesService {
       }
     });
 
-    return this.findOne(id);
+    return this.findOne(id, workGroupId);
   }
 
-  findAll(customerId?: string, paymentStatus?: PaymentStatus, from?: string, to?: string) {
+  findAll(workGroupId: string, customerId?: string, paymentStatus?: PaymentStatus, from?: string, to?: string) {
     if (from && to && startOfDay(from) > endOfDay(to)) {
       throw new BadRequestException('"from" no puede ser posterior a "to"');
     }
@@ -264,6 +268,7 @@ export class SalesService {
     return this.prisma.sale
       .findMany({
         where: {
+          workGroupId,
           ...(customerId && { customerId }),
           ...(paymentStatus && { dispatch: { paymentStatus } }),
           ...((from || to) && {
@@ -279,8 +284,8 @@ export class SalesService {
       .then((sales) => sales.map(withIvaBreakdown));
   }
 
-  async findOne(id: string) {
-    const sale = await this.prisma.sale.findUnique({ where: { id }, include: SALE_INCLUDE });
+  async findOne(id: string, workGroupId: string) {
+    const sale = await this.prisma.sale.findFirst({ where: { id, workGroupId }, include: SALE_INCLUDE });
     if (!sale) {
       throw new NotFoundException('Venta no encontrada');
     }
@@ -291,8 +296,14 @@ export class SalesService {
   // folio y tipo de documento del PDF que generó); a futuro la puede llamar
   // igual una integración con una API de facturación electrónica, pasando el
   // folio y tipo que la propia API devuelva en su respuesta.
-  async setInvoiceUrl(id: string, invoiceUrl: string, invoiceFolio?: string, invoiceType?: InvoiceType) {
-    const sale = await this.findOne(id);
+  async setInvoiceUrl(
+    id: string,
+    workGroupId: string,
+    invoiceUrl: string,
+    invoiceFolio?: string,
+    invoiceType?: InvoiceType,
+  ) {
+    const sale = await this.findOne(id, workGroupId);
     if (sale.invoiceUrl) {
       throw new ConflictException(
         'Esta venta ya tiene una factura adjunta; no se puede reemplazar',
@@ -310,16 +321,17 @@ export class SalesService {
     });
   }
 
-  async getInvoiceUrl(id: string) {
-    const sale = await this.findOne(id);
+  async getInvoiceUrl(id: string, workGroupId: string) {
+    const sale = await this.findOne(id, workGroupId);
     if (!sale.invoiceUrl) {
       throw new NotFoundException('Esta venta no tiene factura adjunta');
     }
     return sale.invoiceUrl;
   }
 
-  async getChart() {
+  async getChart(workGroupId: string) {
     const sales = await this.prisma.sale.findMany({
+      where: { workGroupId },
       orderBy: { soldAt: 'asc' },
       include: { items: true },
     });
@@ -344,9 +356,9 @@ export class SalesService {
   // en que compran — sirve como referencia de cuándo esperar su próximo
   // pedido. Las boletas anónimas (sin cliente) quedan fuera: no hay a quién
   // atribuirles el patrón de compra.
-  async getCustomersChart() {
+  async getCustomersChart(workGroupId: string) {
     const sales = await this.prisma.sale.findMany({
-      where: { customerId: { not: null } },
+      where: { workGroupId, customerId: { not: null } },
       select: {
         customerId: true,
         soldAt: true,
@@ -378,7 +390,7 @@ export class SalesService {
       .sort((a, b) => b.totalQuantity - a.totalQuantity);
   }
 
-  async getReport(dto: QuerySalesReportDto) {
+  async getReport(dto: QuerySalesReportDto, workGroupId: string) {
     const fromDate = startOfDay(dto.from);
     const toDate = endOfDay(dto.to);
     if (fromDate > toDate) {
@@ -393,6 +405,7 @@ export class SalesService {
         where: {
           productId: dto.productId,
           sale: {
+            workGroupId,
             soldAt: { gte: fromDate, lte: toDate },
             ...(dto.customerId && { customerId: dto.customerId }),
           },
@@ -421,6 +434,7 @@ export class SalesService {
 
     const sales = await this.prisma.sale.findMany({
       where: {
+        workGroupId,
         soldAt: { gte: fromDate, lte: toDate },
         ...(dto.customerId && { customerId: dto.customerId }),
       },

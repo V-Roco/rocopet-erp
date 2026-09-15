@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api/client';
-import type { Product, Purchase, Supplier, WorkGroup } from '../api/types';
+import type { Product, Purchase, Supplier } from '../api/types';
 
 interface DraftItem {
   productId: string;
@@ -31,12 +31,10 @@ export default function PurchasesPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [workGroups, setWorkGroups] = useState<WorkGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [supplierId, setSupplierId] = useState('');
-  const [workGroupId, setWorkGroupId] = useState('');
   const [items, setItems] = useState<DraftItem[]>([emptyItem()]);
   const [submitting, setSubmitting] = useState(false);
 
@@ -46,7 +44,6 @@ export default function PurchasesPage() {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editSupplierId, setEditSupplierId] = useState('');
-  const [editWorkGroupId, setEditWorkGroupId] = useState('');
   const [editItems, setEditItems] = useState<DraftItem[]>([]);
   const [savingEdit, setSavingEdit] = useState(false);
 
@@ -59,16 +56,14 @@ export default function PurchasesPage() {
       if (from) params.set('from', from);
       if (to) params.set('to', to);
       const query = params.toString() ? `?${params.toString()}` : '';
-      const [p, prod, sup, wg] = await Promise.all([
+      const [p, prod, sup] = await Promise.all([
         api.get<Purchase[]>(`/purchases${query}`),
         api.get<Product[]>('/products'),
         api.get<Supplier[]>('/suppliers'),
-        api.get<WorkGroup[]>('/work-groups'),
       ]);
       setPurchases(p);
       setProducts([...prod].sort((a, b) => a.name.localeCompare(b.name)));
       setSuppliers(sup);
-      setWorkGroups(wg);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Error de conexión');
     } finally {
@@ -114,7 +109,6 @@ export default function PurchasesPage() {
     try {
       await api.post('/purchases', {
         supplierId,
-        workGroupId: workGroupId || undefined,
         items: items.map((item) => ({
           productId: item.productId,
           quantity: Number(item.quantity),
@@ -122,7 +116,6 @@ export default function PurchasesPage() {
         })),
       });
       setSupplierId('');
-      setWorkGroupId('');
       setItems([emptyItem()]);
       await load();
     } catch (err) {
@@ -135,7 +128,6 @@ export default function PurchasesPage() {
   function startEdit(p: Purchase) {
     setEditingId(p.id);
     setEditSupplierId(p.supplier.id);
-    setEditWorkGroupId(p.workGroup?.id ?? '');
     setEditItems(
       p.items.map((i) => ({
         productId: i.product.id,
@@ -167,7 +159,6 @@ export default function PurchasesPage() {
     try {
       await api.patch(`/purchases/${id}`, {
         supplierId: editSupplierId,
-        workGroupId: editWorkGroupId || undefined,
         items: editItems.map((item) => ({
           productId: item.productId,
           quantity: Number(item.quantity),
@@ -195,14 +186,6 @@ export default function PurchasesPage() {
           {suppliers.map((s) => (
             <option key={s.id} value={s.id}>
               {s.name}
-            </option>
-          ))}
-        </select>
-        <select value={workGroupId} onChange={(e) => setWorkGroupId(e.target.value)}>
-          <option value="">Bodega (opcional)…</option>
-          {workGroups.map((wg) => (
-            <option key={wg.id} value={wg.id}>
-              {wg.name}
             </option>
           ))}
         </select>
@@ -291,7 +274,6 @@ export default function PurchasesPage() {
               <th>Fecha compra</th>
               <th>Creado el</th>
               <th>Proveedor</th>
-              <th>Bodega</th>
               <th>Productos</th>
               <th>Neto</th>
               <th>IVA</th>
@@ -317,20 +299,6 @@ export default function PurchasesPage() {
                       </select>
                     ) : (
                       p.supplier.name
-                    )}
-                  </td>
-                  <td>
-                    {isEditing ? (
-                      <select value={editWorkGroupId} onChange={(e) => setEditWorkGroupId(e.target.value)}>
-                        <option value="">Bodega (opcional)…</option>
-                        {workGroups.map((wg) => (
-                          <option key={wg.id} value={wg.id}>
-                            {wg.name}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      p.workGroup?.name ?? '—'
                     )}
                   </td>
                   <td>
@@ -424,7 +392,7 @@ export default function PurchasesPage() {
             })}
             {purchases.length === 0 && (
               <tr>
-                <td colSpan={9}>Sin compras todavía.</td>
+                <td colSpan={8}>Sin compras todavía.</td>
               </tr>
             )}
           </tbody>
