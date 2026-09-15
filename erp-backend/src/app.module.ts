@@ -11,6 +11,7 @@ import { CustomersModule } from './customers/customers.module';
 import { DispatchesModule } from './dispatches/dispatches.module';
 import { WorkGroupsModule } from './work-groups/work-groups.module';
 import { UsersModule } from './users/users.module';
+import { TransfersModule } from './transfers/transfers.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { UsersModule } from './users/users.module';
     DispatchesModule,
     WorkGroupsModule,
     UsersModule,
+    TransfersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

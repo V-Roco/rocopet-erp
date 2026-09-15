@@ -18,3 +18,14 @@ export function getActiveWorkGroupId(req: Request): string {
   }
   return workGroupId;
 }
+
+// Para acciones que involucran dos lugares de trabajo a la vez (ej. un
+// traspaso de stock entre bodegas), donde no alcanza con el único "lugar de
+// trabajo activo" del header: cada lado se valida por separado contra los
+// lugares de trabajo del usuario.
+export function assertWorkGroupMembership(req: Request, workGroupId: string): void {
+  const user = req.user as { workGroupIds: string[] } | undefined;
+  if (!user?.workGroupIds.includes(workGroupId)) {
+    throw new ForbiddenException('No perteneces a ese lugar de trabajo');
+  }
+}

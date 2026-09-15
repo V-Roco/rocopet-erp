@@ -183,3 +183,19 @@ export interface CustomerChartPoint {
   orderCount: number;
   avgDayOfMonth: number;
 }
+
+export interface Transfer {
+  id: string;
+  fromWorkGroupId: string;
+  toWorkGroupId: string;
+  fromProductId: string;
+  toProductId: string;
+  quantity: number;
+  unitCost: number;
+  totalCost: number;
+  transferredAt: string;
+  fromWorkGroup: { id: string; name: string };
+  toWorkGroup: { id: string; name: string };
+  fromProduct: { id: string; name: string; imageUrl: string | null };
+  toProduct: { id: string; name: string; imageUrl: string | null };
+}

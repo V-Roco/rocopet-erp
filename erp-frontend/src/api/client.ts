@@ -12,9 +12,13 @@ function getToken(): string | null {
   return localStorage.getItem('access_token');
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, options: RequestInit & { workGroupId?: string } = {}): Promise<T> {
   const token = getToken();
-  const workGroupId = localStorage.getItem('active_work_group_id');
+  // Normalmente se manda el lugar de trabajo activo (el del selector), pero
+  // algunas pantallas (ej. Traspasos) necesitan pedir datos de UN lugar de
+  // trabajo específico distinto al activo — para eso se puede pisar el
+  // header puntualmente en esa llamada.
+  const workGroupId = options.workGroupId ?? localStorage.getItem('active_work_group_id');
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),
   };
@@ -50,11 +54,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body?: unknown) =>
+  get: <T>(path: string, opts?: { workGroupId?: string }) => request<T>(path, { workGroupId: opts?.workGroupId }),
+  post: <T>(path: string, body?: unknown, opts?: { workGroupId?: string }) =>
     request<T>(path, {
       method: 'POST',
       body: body instanceof FormData ? body : JSON.stringify(body),
+      workGroupId: opts?.workGroupId,
     }),
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, {

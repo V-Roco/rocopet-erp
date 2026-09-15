@@ -16,6 +16,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/ventas', label: 'Ventas', roles: ['ADMIN', 'PARTNER'] },
   { to: '/cuentas-por-cobrar', label: 'Cuentas por cobrar', roles: ['ADMIN', 'PARTNER'] },
   { to: '/graficos', label: 'Gráficos', roles: ['ADMIN', 'PARTNER'] },
+  { to: '/traspasos', label: 'Traspasos', roles: ['ADMIN', 'PARTNER'] },
   { to: '/despachos', label: 'Despachos', roles: ['ADMIN', 'PARTNER', 'EMPLOYEE'] },
   { to: '/calendario', label: 'Calendario', roles: ['ADMIN', 'PARTNER', 'EMPLOYEE'] },
   { to: '/lugares-trabajo', label: 'Lugares de trabajo', roles: ['ADMIN', 'PARTNER'] },
@@ -37,7 +38,12 @@ export default function Layout() {
     navigate('/login');
   }
 
-  const items = NAV_ITEMS.filter((item) => user && item.roles.includes(user.systemRole));
+  const items = NAV_ITEMS.filter(
+    (item) =>
+      user &&
+      item.roles.includes(user.systemRole) &&
+      (item.to !== '/traspasos' || user.workGroups.length > 1),
+  );
 
   return (
     <div className="app-shell">

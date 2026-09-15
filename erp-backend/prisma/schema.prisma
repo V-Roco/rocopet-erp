@@ -71,6 +71,8 @@ model WorkGroup {
   suppliers Supplier[]
   customers Customer[]
   sales     Sale[]
+  transfersOut Transfer[] @relation("TransfersOut")
+  transfersIn  Transfer[] @relation("TransfersIn")
 }
 
 model Product {
@@ -89,8 +91,40 @@ model Product {
 
   purchaseItems PurchaseItem[]
   saleItems     SaleItem[]
+  transfersOut  Transfer[] @relation("TransfersOutProduct")
+  transfersIn   Transfer[] @relation("TransfersInProduct")
 
   @@index([workGroupId])
+}
+
+// Traspaso de stock de un producto entre dos lugares de trabajo (ej. una
+// bodega le manda mercadería a otra). El producto de origen y el de destino
+// son registros distintos (cada bodega tiene su propio inventario) — si el
+// destino no tenía ese producto todavía, se crea ahí mismo con los mismos
+// datos (nombre, imagen, stock mínimo) al hacer el traspaso. El costo neto
+// migra desde el FIFO del origen, así el nuevo lote en destino queda
+// valorizado igual que si nunca hubiera cambiado de bodega. Es puramente un
+// registro de auditoría: el movimiento de stock en sí (bajar el origen, subir
+// el destino) se hace directamente sobre Product/PurchaseItem, igual que
+// cualquier otro ajuste de inventario en el sistema.
+model Transfer {
+  id              String    @id @default(uuid())
+  fromWorkGroupId String
+  fromWorkGroup   WorkGroup @relation("TransfersOut", fields: [fromWorkGroupId], references: [id])
+  toWorkGroupId   String
+  toWorkGroup     WorkGroup @relation("TransfersIn", fields: [toWorkGroupId], references: [id])
+  fromProductId   String
+  fromProduct     Product   @relation("TransfersOutProduct", fields: [fromProductId], references: [id])
+  toProductId     String
+  toProduct       Product   @relation("TransfersInProduct", fields: [toProductId], references: [id])
+  quantity        Int
+  // Costo unitario NETO (sin IVA) migrado desde el FIFO de origen.
+  unitCost        Int
+  totalCost       Int
+  transferredAt   DateTime  @default(now())
+
+  @@index([fromWorkGroupId])
+  @@index([toWorkGroupId])
 }
 
 // Un vendedor/proveedor al que se le compran productos. Un mismo producto

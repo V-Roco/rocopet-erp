@@ -16,6 +16,7 @@ import WorkGroupsPage from './pages/WorkGroupsPage';
 import UsersPage from './pages/UsersPage';
 import ChartsPage from './pages/ChartsPage';
 import AccountsReceivablePage from './pages/AccountsReceivablePage';
+import TransfersPage from './pages/TransfersPage';
 
 const MANAGEMENT_ROLES = ['ADMIN', 'PARTNER'] as const;
 
@@ -40,6 +41,7 @@ export default function App() {
                 <Route path="/ventas" element={<SalesPage />} />
                 <Route path="/cuentas-por-cobrar" element={<AccountsReceivablePage />} />
                 <Route path="/graficos" element={<ChartsPage />} />
+                <Route path="/traspasos" element={<TransfersPage />} />
                 <Route path="/lugares-trabajo" element={<WorkGroupsPage />} />
                 <Route path="/perfiles" element={<UsersPage />} />
               </Route>

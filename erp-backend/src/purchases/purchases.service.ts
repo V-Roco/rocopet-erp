@@ -1,15 +1,25 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { breakdownIva } from '../common/utils/iva.util';
-import { ADJUSTMENT_SUPPLIER_RUT } from '../common/constants';
+import { ADJUSTMENT_SUPPLIER_RUT, TRANSFER_SUPPLIER_RUT_PREFIX } from '../common/constants';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { QueryPurchasesReportDto } from './dto/query-purchases-report.dto';
 import { endOfDay, startOfDay } from '../common/utils/date-range.util';
 
-// Filtro para dejar fuera de gráficos/reportes las compras del proveedor
-// interno "Ajustes de inventario" (devoluciones de stock al editar una
-// venta) — no son compras reales y distorsionarían las cifras.
-const EXCLUDE_ADJUSTMENTS = { supplier: { rut: { not: ADJUSTMENT_SUPPLIER_RUT } } } as const;
+// Filtro para dejar fuera de gráficos/reportes las compras de proveedores
+// internos: "Ajustes de inventario" (devoluciones de stock al editar una
+// venta) y "Traspaso desde X" (stock que llegó de otra bodega, no de un
+// proveedor real) — ninguna de las dos es una compra real y distorsionarían
+// las cifras.
+const EXCLUDE_INTERNAL_SUPPLIERS: Prisma.PurchaseWhereInput = {
+  NOT: {
+    OR: [
+      { supplier: { rut: ADJUSTMENT_SUPPLIER_RUT } },
+      { supplier: { rut: { startsWith: TRANSFER_SUPPLIER_RUT_PREFIX } } },
+    ],
+  },
+};
 
 const PURCHASE_INCLUDE = {
   supplier: { select: { id: true, name: true, rut: true } },
@@ -201,7 +211,7 @@ export class PurchasesService {
 
   async getChart(workGroupId: string) {
     const purchases = await this.prisma.purchase.findMany({
-      where: { workGroupId, ...EXCLUDE_ADJUSTMENTS },
+      where: { workGroupId, ...EXCLUDE_INTERNAL_SUPPLIERS },
       orderBy: { purchasedAt: 'asc' },
       include: { items: true },
     });
@@ -237,7 +247,7 @@ export class PurchasesService {
             workGroupId,
             purchasedAt: { gte: fromDate, lte: toDate },
             ...(dto.supplierId && { supplierId: dto.supplierId }),
-            ...EXCLUDE_ADJUSTMENTS,
+            ...EXCLUDE_INTERNAL_SUPPLIERS,
           },
         },
         include: {
@@ -266,7 +276,7 @@ export class PurchasesService {
         workGroupId,
         purchasedAt: { gte: fromDate, lte: toDate },
         ...(dto.supplierId && { supplierId: dto.supplierId }),
-        ...EXCLUDE_ADJUSTMENTS,
+        ...EXCLUDE_INTERNAL_SUPPLIERS,
       },
       orderBy: { purchasedAt: 'desc' },
       include: PURCHASE_INCLUDE,
