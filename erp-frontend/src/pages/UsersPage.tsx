@@ -12,6 +12,7 @@ const ROLE_LABELS: Record<SystemRole, string> = {
 export default function UsersPage() {
   const { user: currentUser } = useAuth();
   const canCreate = currentUser?.systemRole === 'ADMIN';
+  const canManage = currentUser?.systemRole === 'ADMIN' || currentUser?.systemRole === 'PARTNER';
 
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [workGroups, setWorkGroups] = useState<WorkGroup[]>([]);
@@ -25,6 +26,12 @@ export default function UsersPage() {
   const [role, setRole] = useState<SystemRole>('EMPLOYEE');
   const [selectedWorkGroups, setSelectedWorkGroups] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editFullName, setEditFullName] = useState('');
+  const [editRole, setEditRole] = useState<SystemRole>('EMPLOYEE');
+  const [editWorkGroups, setEditWorkGroups] = useState<string[]>([]);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -86,6 +93,42 @@ export default function UsersPage() {
     }
   }
 
+  function startEdit(u: UserProfile) {
+    setEditingId(u.id);
+    setEditFullName(u.fullName ?? '');
+    setEditRole(u.systemRole);
+    setEditWorkGroups(u.workGroups.map((wg) => wg.id));
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+  }
+
+  function toggleEditWorkGroup(id: string) {
+    setEditWorkGroups((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  async function handleSaveEdit(id: string) {
+    setSavingEdit(true);
+    setError(null);
+    try {
+      await api.patch(`/users/${id}`, {
+        fullName: editFullName || undefined,
+        workGroupIds: editWorkGroups,
+        // Solo ADMIN puede cambiar el rol (el backend lo rechaza igual si
+        // no lo es, pero mejor no mandarlo si ni siquiera se mostró el
+        // selector para editarlo).
+        ...(canCreate && { systemRole: editRole }),
+      });
+      setEditingId(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Error de conexión');
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
   return (
     <div>
       <h1>Perfiles</h1>
@@ -136,26 +179,83 @@ export default function UsersPage() {
               <th>Rol</th>
               <th>Lugares de trabajo</th>
               <th>Estado</th>
-              {canCreate && <th></th>}
+              {canManage && <th></th>}
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => (
-              <tr key={u.id}>
-                <td>{u.fullName ?? '—'}</td>
-                <td>{u.email}</td>
-                <td>{ROLE_LABELS[u.systemRole]}</td>
-                <td>{u.workGroups.map((wg) => wg.name).join(', ') || '—'}</td>
-                <td>{u.isActive ? 'Activo' : 'Desactivado'}</td>
-                {canCreate && (
-                  <td>
-                    <button className="link-btn" onClick={() => toggleActive(u)}>
-                      {u.isActive ? 'Desactivar' : 'Reactivar'}
-                    </button>
-                  </td>
-                )}
-              </tr>
-            ))}
+            {users.map((u) => {
+              const isEditing = editingId === u.id;
+              return (
+                <tr key={u.id}>
+                  {isEditing ? (
+                    <>
+                      <td>
+                        <input value={editFullName} onChange={(e) => setEditFullName(e.target.value)} />
+                      </td>
+                      <td>{u.email}</td>
+                      <td>
+                        {canCreate ? (
+                          <select value={editRole} onChange={(e) => setEditRole(e.target.value as SystemRole)}>
+                            {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                              <option key={value} value={value}>
+                                {label}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          ROLE_LABELS[u.systemRole]
+                        )}
+                      </td>
+                      <td>
+                        <div className="checkbox-group">
+                          {workGroups.map((wg) => (
+                            <label key={wg.id}>
+                              <input
+                                type="checkbox"
+                                checked={editWorkGroups.includes(wg.id)}
+                                onChange={() => toggleEditWorkGroup(wg.id)}
+                              />
+                              {wg.name}
+                            </label>
+                          ))}
+                        </div>
+                      </td>
+                      <td>{u.isActive ? 'Activo' : 'Desactivado'}</td>
+                      <td>
+                        <button
+                          className="link-btn"
+                          disabled={savingEdit || editWorkGroups.length === 0}
+                          onClick={() => handleSaveEdit(u.id)}
+                        >
+                          {savingEdit ? 'Guardando…' : 'Guardar'}
+                        </button>{' '}
+                        <button className="link-btn" onClick={cancelEdit}>
+                          Cancelar
+                        </button>
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td>{u.fullName ?? '—'}</td>
+                      <td>{u.email}</td>
+                      <td>{ROLE_LABELS[u.systemRole]}</td>
+                      <td>{u.workGroups.map((wg) => wg.name).join(', ') || '—'}</td>
+                      <td>{u.isActive ? 'Activo' : 'Desactivado'}</td>
+                      {canManage && (
+                        <td>
+                          <button className="link-btn" onClick={() => startEdit(u)}>
+                            Editar
+                          </button>{' '}
+                          <button className="link-btn" onClick={() => toggleActive(u)}>
+                            {u.isActive ? 'Desactivar' : 'Reactivar'}
+                          </button>
+                        </td>
+                      )}
+                    </>
+                  )}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
